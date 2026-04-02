@@ -69,12 +69,12 @@ func TestBuildWebDeployment_Minimal(t *testing.T) {
 
 	// Labels
 	expectedLabels := map[string]string{
-		"app.kubernetes.io/name":        "langfuse",
-		"app.kubernetes.io/instance":    "test",
-		"app.kubernetes.io/component":   "web",
-		"app.kubernetes.io/managed-by":  "langfuse-operator",
-		"app.kubernetes.io/part-of":     "langfuse",
-		"langfuse.bitkaio.com/instance": "test",
+		"app.kubernetes.io/name":       "langfuse",
+		"app.kubernetes.io/instance":   "test",
+		"app.kubernetes.io/component":  "web",
+		"app.kubernetes.io/managed-by": "langfuse-operator",
+		"app.kubernetes.io/part-of":    "langfuse",
+		"langfuse.palena.ai/instance":  "test",
 	}
 	for k, v := range expectedLabels {
 		if deploy.Labels[k] != v {

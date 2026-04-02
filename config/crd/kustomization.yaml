@@ -2,9 +2,9 @@
 # since it depends on service name and namespace that are out of this kustomize package.
 # It should be run by config/default
 resources:
-- bases/langfuse.bitkaio.com_langfuseinstances.yaml
-- bases/langfuse.bitkaio.com_langfuseorganizations.yaml
-- bases/langfuse.bitkaio.com_langfuseprojects.yaml
+- bases/langfuse.palena.ai_langfuseinstances.yaml
+- bases/langfuse.palena.ai_langfuseorganizations.yaml
+- bases/langfuse.palena.ai_langfuseprojects.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

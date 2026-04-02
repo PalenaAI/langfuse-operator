@@ -30,7 +30,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - langfuse.bitkaio.com
+  - langfuse.palena.ai
   resources:
   - langfuseinstances
   - langfuseorganizations
@@ -44,7 +44,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - langfuse.bitkaio.com
+  - langfuse.palena.ai
   resources:
   - langfuseinstances/finalizers
   - langfuseorganizations/finalizers
@@ -52,7 +52,7 @@ rules:
   verbs:
   - update
 - apiGroups:
-  - langfuse.bitkaio.com
+  - langfuse.palena.ai
   resources:
   - langfuseinstances/status
   - langfuseorganizations/status

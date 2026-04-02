@@ -43,9 +43,9 @@ type LangfuseInstanceReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=langfuse.bitkaio.com,resources=langfuseinstances,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=langfuse.bitkaio.com,resources=langfuseinstances/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=langfuse.bitkaio.com,resources=langfuseinstances/finalizers,verbs=update
+// +kubebuilder:rbac:groups=langfuse.palena.ai,resources=langfuseinstances,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=langfuse.palena.ai,resources=langfuseinstances/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=langfuse.palena.ai,resources=langfuseinstances/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete

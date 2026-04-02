@@ -21,12 +21,12 @@ import v1alpha1 "github.com/bitkaio/langfuse-operator/api/v1alpha1"
 // CommonLabels returns labels that should be applied to all managed resources.
 func CommonLabels(instance *v1alpha1.LangfuseInstance, component string) map[string]string {
 	return map[string]string{
-		"app.kubernetes.io/name":        "langfuse",
-		"app.kubernetes.io/instance":    instance.Name,
-		"app.kubernetes.io/component":   component,
-		"app.kubernetes.io/managed-by":  "langfuse-operator",
-		"app.kubernetes.io/part-of":     "langfuse",
-		"langfuse.bitkaio.com/instance": instance.Name,
+		"app.kubernetes.io/name":       "langfuse",
+		"app.kubernetes.io/instance":   instance.Name,
+		"app.kubernetes.io/component":  component,
+		"app.kubernetes.io/managed-by": "langfuse-operator",
+		"app.kubernetes.io/part-of":    "langfuse",
+		"langfuse.palena.ai/instance":  instance.Name,
 	}
 }
 

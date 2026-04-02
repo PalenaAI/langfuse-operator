@@ -1,4 +1,4 @@
-apiVersion: langfuse.bitkaio.com/v1alpha1
+apiVersion: langfuse.palena.ai/v1alpha1
 kind: LangfuseInstance
 metadata:
   name: langfuse-minimal

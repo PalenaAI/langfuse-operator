@@ -4,34 +4,30 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.18.0
-  name: langfuseorganizations.langfuse.bitkaio.com
+  name: langfuseprojects.langfuse.palena.ai
 spec:
-  group: langfuse.bitkaio.com
+  group: langfuse.palena.ai
   names:
-    kind: LangfuseOrganization
-    listKind: LangfuseOrganizationList
-    plural: langfuseorganizations
-    singular: langfuseorganization
+    kind: LangfuseProject
+    listKind: LangfuseProjectList
+    plural: langfuseprojects
+    singular: langfuseproject
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
     - jsonPath: .status.ready
       name: Ready
       type: boolean
-    - jsonPath: .status.organizationId
-      name: Org ID
+    - jsonPath: .status.projectId
+      name: Project ID
       type: string
-    - jsonPath: .status.memberCount
-      name: Members
-      type: integer
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: LangfuseOrganization is the Schema for the langfuseorganizations
-          API.
+        description: LangfuseProject is the Schema for the langfuseprojects API.
         properties:
           apiVersion:
             description: |-
@@ -51,11 +47,26 @@ spec:
           metadata:
             type: object
           spec:
-            description: LangfuseOrganizationSpec defines the desired state of LangfuseOrganization.
+            description: LangfuseProjectSpec defines the desired state of LangfuseProject.
             properties:
-              displayName:
-                description: DisplayName is the organization name in Langfuse.
-                type: string
+              apiKeys:
+                description: APIKeys defines API keys to create and manage.
+                items:
+                  description: APIKeySpec defines an API key to create in Langfuse
+                    and store in a K8s Secret.
+                  properties:
+                    name:
+                      description: Name is the logical name of the API key.
+                      type: string
+                    secretName:
+                      description: SecretName is the K8s Secret name to store the
+                        key pair.
+                      type: string
+                  required:
+                  - name
+                  - secretName
+                  type: object
+                type: array
               instanceRef:
                 description: InstanceRef references the parent LangfuseInstance.
                 properties:
@@ -69,46 +80,58 @@ spec:
                 required:
                 - name
                 type: object
-              members:
-                description: Members configures organization membership.
+              organizationRef:
+                description: OrganizationRef references the parent LangfuseOrganization
+                  CR.
                 properties:
-                  managedExclusively:
-                    description: ManagedExclusively when true removes users not in
-                      this list.
-                    type: boolean
-                  users:
-                    description: Users is the list of organization members.
-                    items:
-                      description: OrganizationMemberSpec defines a single organization
-                        member.
-                      properties:
-                        email:
-                          description: Email is the user's email address.
-                          type: string
-                        role:
-                          description: Role is the user's role in the organization.
-                          enum:
-                          - owner
-                          - admin
-                          - member
-                          - viewer
-                          type: string
-                      required:
-                      - email
-                      - role
-                      type: object
-                    type: array
+                  name:
+                    description: Name of the referenced resource.
+                    type: string
+                  namespace:
+                    description: Namespace of the referenced resource. Defaults to
+                      the referencing resource's namespace.
+                    type: string
+                required:
+                - name
                 type: object
+              projectName:
+                description: ProjectName is the project name in Langfuse.
+                type: string
             required:
-            - displayName
             - instanceRef
+            - organizationRef
+            - projectName
             type: object
           status:
-            description: LangfuseOrganizationStatus defines the observed state of
-              LangfuseOrganization.
+            description: LangfuseProjectStatus defines the observed state of LangfuseProject.
             properties:
+              apiKeys:
+                description: APIKeys reports the status of each managed API key.
+                items:
+                  description: APIKeyStatus reports the status of a single managed
+                    API key.
+                  properties:
+                    created:
+                      description: Created indicates if the API key has been created.
+                      type: boolean
+                    lastRotated:
+                      description: LastRotated is the last time the API key was rotated.
+                      format: date-time
+                      type: string
+                    name:
+                      description: Name is the logical name of the API key.
+                      type: string
+                    secretName:
+                      description: SecretName is the K8s Secret storing the key pair.
+                      type: string
+                  required:
+                  - created
+                  - name
+                  - secretName
+                  type: object
+                type: array
               conditions:
-                description: Conditions represent the latest observations of the organization's
+                description: Conditions represent the latest observations of the project's
                   state.
                 items:
                   description: Condition contains details for one aspect of the current
@@ -165,23 +188,16 @@ spec:
                   - type
                   type: object
                 type: array
-              memberCount:
-                description: MemberCount is the total number of members.
-                type: integer
               organizationId:
                 description: OrganizationID is the Langfuse internal organization
                   ID.
                 type: string
-              projectCount:
-                description: ProjectCount is the number of LangfuseProject CRs referencing
-                  this org.
-                type: integer
+              projectId:
+                description: ProjectID is the Langfuse internal project ID.
+                type: string
               ready:
-                description: Ready indicates whether the organization is fully synced.
+                description: Ready indicates whether the project is fully synced.
                 type: boolean
-              syncedMembers:
-                description: SyncedMembers is the number of confirmed synced members.
-                type: integer
             type: object
         type: object
     served: true

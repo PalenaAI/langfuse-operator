@@ -21,7 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	v1alpha1 "github.com/bitkaio/langfuse-operator/api/v1alpha1"
+	v1alpha1 "github.com/PalenaAI/langfuse-operator/api/v1alpha1"
 )
 
 // BuildWebService constructs the desired Service for the Langfuse Web component.

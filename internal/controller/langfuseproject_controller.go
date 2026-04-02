@@ -24,7 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	langfusev1alpha1 "github.com/bitkaio/langfuse-operator/api/v1alpha1"
+	langfusev1alpha1 "github.com/PalenaAI/langfuse-operator/api/v1alpha1"
 )
 
 // LangfuseProjectReconciler reconciles a LangfuseProject object

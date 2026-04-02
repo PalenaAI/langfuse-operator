@@ -32,7 +32,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	langfusev1alpha1 "github.com/bitkaio/langfuse-operator/api/v1alpha1"
+	langfusev1alpha1 "github.com/PalenaAI/langfuse-operator/api/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 

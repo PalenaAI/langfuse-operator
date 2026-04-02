@@ -15,7 +15,7 @@ Thank you for your interest in contributing to the Langfuse Operator! This guide
 1. **Clone the repository:**
 
    ```bash
-   git clone https://github.com/bitkaio/langfuse-operator.git
+   git clone https://github.com/PalenaAI/langfuse-operator.git
    cd langfuse-operator
    ```
 

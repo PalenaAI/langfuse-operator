@@ -37,8 +37,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	langfusev1alpha1 "github.com/bitkaio/langfuse-operator/api/v1alpha1"
-	"github.com/bitkaio/langfuse-operator/internal/controller"
+	langfusev1alpha1 "github.com/PalenaAI/langfuse-operator/api/v1alpha1"
+	"github.com/PalenaAI/langfuse-operator/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
 

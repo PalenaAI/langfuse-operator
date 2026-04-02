@@ -22,7 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	v1alpha1 "github.com/bitkaio/langfuse-operator/api/v1alpha1"
+	v1alpha1 "github.com/PalenaAI/langfuse-operator/api/v1alpha1"
 )
 
 func ptrInt32(v int32) *int32 { return &v }

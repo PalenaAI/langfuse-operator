@@ -16,7 +16,7 @@ limitations under the License.
 
 package resources
 
-import v1alpha1 "github.com/bitkaio/langfuse-operator/api/v1alpha1"
+import v1alpha1 "github.com/PalenaAI/langfuse-operator/api/v1alpha1"
 
 // CommonLabels returns labels that should be applied to all managed resources.
 func CommonLabels(instance *v1alpha1.LangfuseInstance, component string) map[string]string {

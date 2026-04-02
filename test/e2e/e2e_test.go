@@ -27,7 +27,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/bitkaio/langfuse-operator/test/utils"
+	"github.com/PalenaAI/langfuse-operator/test/utils"
 )
 
 // namespace where the project is deployed in

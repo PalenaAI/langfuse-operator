@@ -27,7 +27,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	langfusev1alpha1 "github.com/bitkaio/langfuse-operator/api/v1alpha1"
+	langfusev1alpha1 "github.com/PalenaAI/langfuse-operator/api/v1alpha1"
 )
 
 var _ = Describe("LangfuseProject Controller", func() {

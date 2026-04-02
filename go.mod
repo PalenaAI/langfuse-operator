@@ -1,4 +1,4 @@
-module github.com/bitkaio/langfuse-operator
+module github.com/PalenaAI/langfuse-operator
 
 go 1.24.0
 

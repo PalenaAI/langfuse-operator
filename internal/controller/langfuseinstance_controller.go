@@ -32,9 +32,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	v1alpha1 "github.com/bitkaio/langfuse-operator/api/v1alpha1"
-	"github.com/bitkaio/langfuse-operator/internal/langfuse"
-	"github.com/bitkaio/langfuse-operator/internal/resources"
+	v1alpha1 "github.com/PalenaAI/langfuse-operator/api/v1alpha1"
+	"github.com/PalenaAI/langfuse-operator/internal/langfuse"
+	"github.com/PalenaAI/langfuse-operator/internal/resources"
 )
 
 // LangfuseInstanceReconciler reconciles a LangfuseInstance object

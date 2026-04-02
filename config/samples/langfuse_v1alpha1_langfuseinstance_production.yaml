@@ -1,0 +1,83 @@
+apiVersion: langfuse.bitkaio.com/v1alpha1
+kind: LangfuseInstance
+metadata:
+  name: production
+  namespace: langfuse
+spec:
+  image:
+    repository: "langfuse/langfuse"
+    tag: "3"
+    pullPolicy: IfNotPresent
+
+  web:
+    replicas: 3
+    resources:
+      requests:
+        cpu: "2"
+        memory: "3Gi"
+      limits:
+        cpu: "4"
+        memory: "6Gi"
+
+  worker:
+    replicas: 2
+    concurrency: 10
+    resources:
+      requests:
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+
+  auth:
+    nextAuthUrl: "https://langfuse.example.com"
+    nextAuthSecret:
+      secretRef:
+        name: langfuse-auth
+        key: nextauth-secret
+    salt:
+      secretRef:
+        name: langfuse-auth
+        key: salt
+
+  database:
+    external:
+      secretRef:
+        name: langfuse-db
+        keys:
+          url: "database_url"
+
+  clickhouse:
+    external:
+      secretRef:
+        name: langfuse-clickhouse
+        keys:
+          url: "url"
+          username: "username"
+          password: "password"
+
+  redis:
+    external:
+      secretRef:
+        name: langfuse-redis
+        keys:
+          host: "host"
+          port: "port"
+          password: "password"
+
+  blobStorage:
+    provider: s3
+    s3:
+      bucket: "langfuse-traces"
+      region: "us-east-1"
+      credentials:
+        secretRef:
+          name: langfuse-s3
+          keys:
+            accessKeyId: "access_key"
+            secretAccessKey: "secret_key"
+
+  security:
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true

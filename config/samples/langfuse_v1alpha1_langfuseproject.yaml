@@ -1,0 +1,16 @@
+apiVersion: langfuse.bitkaio.com/v1alpha1
+kind: LangfuseProject
+metadata:
+  name: ml-team-prod
+  namespace: langfuse
+spec:
+  instanceRef:
+    name: production
+  organizationRef:
+    name: ml-platform
+  projectName: "prod-inference"
+  apiKeys:
+    - name: "default"
+      secretName: "langfuse-ml-team-keys"
+    - name: "ci-pipeline"
+      secretName: "langfuse-ci-keys"

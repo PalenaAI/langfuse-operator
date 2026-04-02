@@ -1,0 +1,10 @@
+apiVersion: langfuse.bitkaio.com/v1alpha1
+kind: LangfuseInstance
+metadata:
+  name: langfuse-minimal
+  namespace: langfuse
+spec:
+  image:
+    tag: "3"
+  auth:
+    nextAuthUrl: "https://langfuse.example.com"

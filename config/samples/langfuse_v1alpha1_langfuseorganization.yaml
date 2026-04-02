@@ -1,0 +1,18 @@
+apiVersion: langfuse.bitkaio.com/v1alpha1
+kind: LangfuseOrganization
+metadata:
+  name: ml-platform
+  namespace: langfuse
+spec:
+  instanceRef:
+    name: production
+  displayName: "ML Platform Team"
+  members:
+    managedExclusively: false
+    users:
+      - email: "alice@example.com"
+        role: "owner"
+      - email: "bob@example.com"
+        role: "admin"
+      - email: "carol@example.com"
+        role: "member"

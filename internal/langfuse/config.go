@@ -37,6 +37,63 @@ func BuildConfig(instance *v1alpha1.LangfuseInstance) (*Config, error) {
 	cfg := &Config{}
 
 	// ─── Auth ─────────────────────────────────────────────────
+	addAuthEnv(cfg, instance)
+
+	// ─── Database ─────────────────────────────────────────────
+	addDatabaseEnv(cfg, instance)
+
+	// ─── ClickHouse ───────────────────────────────────────────
+	addClickHouseEnv(cfg, instance)
+
+	// ─── Redis ────────────────────────────────────────────────
+	addRedisEnv(cfg, instance)
+
+	// ─── Blob Storage ─────────────────────────────────────────
+	addBlobStorageEnv(cfg, instance)
+
+	// ─── LLM ──────────────────────────────────────────────────
+	if instance.Spec.LLM != nil {
+		if instance.Spec.LLM.APIBase != "" {
+			cfg.CommonEnv = append(cfg.CommonEnv, envVar("LLM_API_BASE", instance.Spec.LLM.APIBase))
+		}
+		if instance.Spec.LLM.APIKey != nil {
+			cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("LLM_API_KEY",
+				instance.Spec.LLM.APIKey.Name, instance.Spec.LLM.APIKey.Key))
+		}
+		if instance.Spec.LLM.Model != "" {
+			cfg.CommonEnv = append(cfg.CommonEnv, envVar("LLM_MODEL", instance.Spec.LLM.Model))
+		}
+	}
+
+	// ─── Telemetry ────────────────────────────────────────────
+	if instance.Spec.Security != nil && instance.Spec.Security.Telemetry != nil &&
+		instance.Spec.Security.Telemetry.Enabled != nil && !*instance.Spec.Security.Telemetry.Enabled {
+		cfg.CommonEnv = append(cfg.CommonEnv, envVar("TELEMETRY_ENABLED", "false"))
+	}
+
+	// ─── OTEL ─────────────────────────────────────────────────
+	if instance.Spec.Observability != nil && instance.Spec.Observability.OTEL != nil && instance.Spec.Observability.OTEL.Enabled {
+		cfg.CommonEnv = append(cfg.CommonEnv, envVar("OTEL_EXPORTER_OTLP_ENDPOINT", instance.Spec.Observability.OTEL.Endpoint))
+		cfg.CommonEnv = append(cfg.CommonEnv, envVar("OTEL_EXPORTER_OTLP_PROTOCOL", instance.Spec.Observability.OTEL.Protocol))
+	}
+
+	// ─── Web-specific ─────────────────────────────────────────
+	cfg.WebEnv = append(cfg.WebEnv, envVar("LANGFUSE_WORKER_ENABLED", "false"))
+	cfg.WebEnv = append(cfg.WebEnv, envVar("PORT", "3000"))
+	cfg.WebEnv = append(cfg.WebEnv, envVar("HOSTNAME", "0.0.0.0"))
+
+	// ─── Worker-specific ──────────────────────────────────────
+	cfg.WorkerEnv = append(cfg.WorkerEnv, envVar("LANGFUSE_WORKER_ENABLED", "true"))
+	concurrency := int32(10)
+	if instance.Spec.Worker.Concurrency != nil {
+		concurrency = *instance.Spec.Worker.Concurrency
+	}
+	cfg.WorkerEnv = append(cfg.WorkerEnv, envVar("LANGFUSE_WORKER_CONCURRENCY", strconv.Itoa(int(concurrency))))
+
+	return cfg, nil
+}
+
+func addAuthEnv(cfg *Config, instance *v1alpha1.LangfuseInstance) {
 	cfg.CommonEnv = append(cfg.CommonEnv, corev1.EnvVar{
 		Name:  "NEXTAUTH_URL",
 		Value: instance.Spec.Auth.NextAuthUrl,
@@ -101,65 +158,11 @@ func BuildConfig(instance *v1alpha1.LangfuseInstance) (*Config, error) {
 			cfg.CommonEnv = append(cfg.CommonEnv, envVar("LANGFUSE_INIT_PROJECT_NAME", instance.Spec.Auth.InitUser.ProjectName))
 		}
 	}
-
-	// ─── Database ─────────────────────────────────────────────
-	if err := addDatabaseEnv(cfg, instance); err != nil {
-		return nil, fmt.Errorf("database config: %w", err)
-	}
-
-	// ─── ClickHouse ───────────────────────────────────────────
-	addClickHouseEnv(cfg, instance)
-
-	// ─── Redis ────────────────────────────────────────────────
-	addRedisEnv(cfg, instance)
-
-	// ─── Blob Storage ─────────────────────────────────────────
-	addBlobStorageEnv(cfg, instance)
-
-	// ─── LLM ──────────────────────────────────────────────────
-	if instance.Spec.LLM != nil {
-		if instance.Spec.LLM.APIBase != "" {
-			cfg.CommonEnv = append(cfg.CommonEnv, envVar("LLM_API_BASE", instance.Spec.LLM.APIBase))
-		}
-		if instance.Spec.LLM.APIKey != nil {
-			cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("LLM_API_KEY",
-				instance.Spec.LLM.APIKey.Name, instance.Spec.LLM.APIKey.Key))
-		}
-		if instance.Spec.LLM.Model != "" {
-			cfg.CommonEnv = append(cfg.CommonEnv, envVar("LLM_MODEL", instance.Spec.LLM.Model))
-		}
-	}
-
-	// ─── Telemetry ────────────────────────────────────────────
-	if instance.Spec.Security != nil && instance.Spec.Security.Telemetry != nil &&
-		instance.Spec.Security.Telemetry.Enabled != nil && !*instance.Spec.Security.Telemetry.Enabled {
-		cfg.CommonEnv = append(cfg.CommonEnv, envVar("TELEMETRY_ENABLED", "false"))
-	}
-
-	// ─── OTEL ─────────────────────────────────────────────────
-	if instance.Spec.Observability != nil && instance.Spec.Observability.OTEL != nil && instance.Spec.Observability.OTEL.Enabled {
-		cfg.CommonEnv = append(cfg.CommonEnv, envVar("OTEL_EXPORTER_OTLP_ENDPOINT", instance.Spec.Observability.OTEL.Endpoint))
-		cfg.CommonEnv = append(cfg.CommonEnv, envVar("OTEL_EXPORTER_OTLP_PROTOCOL", instance.Spec.Observability.OTEL.Protocol))
-	}
-
-	// ─── Web-specific ─────────────────────────────────────────
-	cfg.WebEnv = append(cfg.WebEnv, envVar("LANGFUSE_WORKER_ENABLED", "false"))
-	cfg.WebEnv = append(cfg.WebEnv, envVar("PORT", "3000"))
-
-	// ─── Worker-specific ──────────────────────────────────────
-	cfg.WorkerEnv = append(cfg.WorkerEnv, envVar("LANGFUSE_WORKER_ENABLED", "true"))
-	concurrency := int32(10)
-	if instance.Spec.Worker.Concurrency != nil {
-		concurrency = *instance.Spec.Worker.Concurrency
-	}
-	cfg.WorkerEnv = append(cfg.WorkerEnv, envVar("LANGFUSE_WORKER_CONCURRENCY", strconv.Itoa(int(concurrency))))
-
-	return cfg, nil
 }
 
-func addDatabaseEnv(cfg *Config, instance *v1alpha1.LangfuseInstance) error {
+func addDatabaseEnv(cfg *Config, instance *v1alpha1.LangfuseInstance) {
 	if instance.Spec.Database == nil {
-		return nil
+		return
 	}
 
 	db := instance.Spec.Database
@@ -167,11 +170,7 @@ func addDatabaseEnv(cfg *Config, instance *v1alpha1.LangfuseInstance) error {
 	case db.CloudNativePG != nil:
 		// CNPG stores credentials in <cluster>-app secret with keys: uri, host, port, dbname, user, password
 		clusterName := db.CloudNativePG.ClusterRef.Name
-		ns := db.CloudNativePG.ClusterRef.Namespace
 		secretName := clusterName + "-app"
-		if ns != "" {
-			secretName = clusterName + "-app"
-		}
 		cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("DATABASE_URL", secretName, "uri"))
 	case db.Managed != nil:
 		// Managed DB — the operator will create the secret in Phase 2
@@ -190,8 +189,6 @@ func addDatabaseEnv(cfg *Config, instance *v1alpha1.LangfuseInstance) error {
 				db.External.SecretRef.Name, directKey))
 		}
 	}
-
-	return nil
 }
 
 func addClickHouseEnv(cfg *Config, instance *v1alpha1.LangfuseInstance) {
@@ -200,6 +197,10 @@ func addClickHouseEnv(cfg *Config, instance *v1alpha1.LangfuseInstance) {
 	}
 
 	ch := instance.Spec.ClickHouse
+
+	// Default to single-node mode; clustering requires ZooKeeper/Keeper
+	cfg.CommonEnv = append(cfg.CommonEnv, envVar("CLICKHOUSE_CLUSTER_ENABLED", "false"))
+
 	switch {
 	case ch.Managed != nil:
 		// Managed ClickHouse — credentials from generated or referenced secret
@@ -225,6 +226,8 @@ func addClickHouseEnv(cfg *Config, instance *v1alpha1.LangfuseInstance) {
 		// The URL will be set in Phase 2 when managed ClickHouse is deployed
 		cfg.CommonEnv = append(cfg.CommonEnv, envVar("CLICKHOUSE_URL",
 			fmt.Sprintf("http://%s-clickhouse:8123", instance.Name)))
+		cfg.CommonEnv = append(cfg.CommonEnv, envVar("CLICKHOUSE_MIGRATION_URL",
+			fmt.Sprintf("clickhouse://%s-clickhouse:9000", instance.Name)))
 	case ch.External != nil:
 		urlKey := ch.External.SecretRef.Keys["url"]
 		if urlKey == "" {

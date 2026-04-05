@@ -1,6 +1,10 @@
 # Blob Storage
 
-Langfuse uses blob storage for large trace payloads. The operator supports **S3**, **Azure Blob Storage**, and **Google Cloud Storage**.
+Langfuse uses blob storage for event upload and large trace payloads. The operator supports **S3**, **Azure Blob Storage**, and **Google Cloud Storage**.
+
+::: warning Required
+Blob storage is **mandatory** in Langfuse v3. The application will not start without a configured blob storage backend.
+:::
 
 ## S3 / S3-Compatible
 

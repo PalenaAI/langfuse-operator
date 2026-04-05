@@ -1,0 +1,64 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "langfuse-operator.fullname" . }}-manager
+  labels:
+    {{- include "langfuse-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+      - services
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - langfuse.palena.ai
+    resources:
+      - langfuseinstances
+      - langfuseorganizations
+      - langfuseprojects
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - langfuse.palena.ai
+    resources:
+      - langfuseinstances/finalizers
+      - langfuseorganizations/finalizers
+      - langfuseprojects/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - langfuse.palena.ai
+    resources:
+      - langfuseinstances/status
+      - langfuseorganizations/status
+      - langfuseprojects/status
+    verbs:
+      - get
+      - patch
+      - update

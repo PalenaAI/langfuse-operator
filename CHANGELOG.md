@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-05
+
+### Added
+
+- **Helm chart** for installing the operator on non-OLM clusters (`deploy/charts/langfuse-operator/`)
+- **Automatic CRD sync** into the Helm chart via `make manifests` / `make sync-helm-crds`
+- **Minikube test manifests** for local end-to-end testing with PostgreSQL, ClickHouse, Redis, and MinIO (`test/minikube/`)
+
+### Fixed
+
+- **ClickHouse migrations fail** — added `CLICKHOUSE_MIGRATION_URL` (native protocol `clickhouse://host:9000`) for both managed and external ClickHouse configurations
+- **ClickHouse single-node mode** — set `CLICKHOUSE_CLUSTER_ENABLED=false` by default to prevent `ON CLUSTER` DDL errors without ZooKeeper
+- **Web UI unreachable via Service** — set `HOSTNAME=0.0.0.0` on the web container so Next.js binds to all interfaces instead of the pod hostname
+- **Lint failures** — extracted phase constants (`goconst`), removed unused error return from `addDatabaseEnv` (`unparam`), reduced `BuildConfig` cyclomatic complexity (`gocyclo`)
+
 ## [0.4.0] - 2026-04-02
 
 ### Added
@@ -26,5 +41,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Cloudflare Pages deployment** via `wrangler.toml`
 - `CONTRIBUTING.md` with development setup, conventions, and commit format
 
-[Unreleased]: https://github.com/PalenaAI/langfuse-operator/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/PalenaAI/langfuse-operator/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/PalenaAI/langfuse-operator/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/PalenaAI/langfuse-operator/releases/tag/v0.4.0

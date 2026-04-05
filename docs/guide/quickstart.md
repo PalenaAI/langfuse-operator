@@ -8,6 +8,7 @@ Before creating a `LangfuseInstance`, ensure you have:
 
 - The operator [installed](/guide/installation) in your cluster
 - PostgreSQL, ClickHouse, and Redis accessible from the cluster
+- S3-compatible blob storage (or Azure Blob / GCS) &mdash; [required in Langfuse v3](/guide/blob-storage)
 - Connection credentials stored in Kubernetes Secrets
 
 ## 1. Create Secrets
@@ -24,6 +25,7 @@ kubectl create secret generic langfuse-db -n langfuse \
 # ClickHouse
 kubectl create secret generic langfuse-clickhouse -n langfuse \
   --from-literal=url="http://clickhouse:8123" \
+  --from-literal=migration_url="clickhouse://clickhouse:9000" \
   --from-literal=username="default" \
   --from-literal=password="clickhouse-pass"
 
@@ -32,6 +34,11 @@ kubectl create secret generic langfuse-redis -n langfuse \
   --from-literal=host="redis" \
   --from-literal=port="6379" \
   --from-literal=password="redis-pass"
+
+# S3 / Blob Storage
+kubectl create secret generic langfuse-s3 -n langfuse \
+  --from-literal=access_key="your-access-key" \
+  --from-literal=secret_key="your-secret-key"
 ```
 
 ## 2. Create a LangfuseInstance
@@ -62,6 +69,7 @@ spec:
         name: langfuse-clickhouse
         keys:
           url: url
+          migrationUrl: migration_url
           username: username
           password: password
 
@@ -73,6 +81,18 @@ spec:
           host: host
           port: port
           password: password
+
+  blobStorage:
+    provider: s3
+    s3:
+      bucket: langfuse-traces
+      region: us-east-1
+      credentials:
+        secretRef:
+          name: langfuse-s3
+          keys:
+            accessKeyId: access_key
+            secretAccessKey: secret_key
 ```
 
 Apply it:

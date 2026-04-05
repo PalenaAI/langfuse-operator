@@ -1,0 +1,22 @@
+apiVersion: v2
+name: langfuse-operator
+description: Kubernetes operator for deploying and managing production-ready Langfuse LLM observability instances
+type: application
+version: 0.5.0
+appVersion: "0.5.0"
+kubeVersion: ">= 1.26.0-0"
+home: https://github.com/PalenaAI/langfuse-operator
+sources:
+  - https://github.com/PalenaAI/langfuse-operator
+maintainers:
+  - name: bitkaio
+    email: info@bitkai.io
+    url: https://bitkai.io
+keywords:
+  - langfuse
+  - llm
+  - observability
+  - tracing
+  - ai
+  - kubernetes-operator
+icon: https://langfuse.com/langfuse_logo.svg

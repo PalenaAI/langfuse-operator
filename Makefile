@@ -3,7 +3,7 @@
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-VERSION ?= 0.4.0
+VERSION ?= 0.5.0
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
@@ -92,9 +92,18 @@ help: ## Display this help.
 
 ##@ Development
 
+HELM_CHART_DIR ?= deploy/charts/langfuse-operator
+
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	@$(MAKE) sync-helm-crds
+
+.PHONY: sync-helm-crds
+sync-helm-crds: ## Copy generated CRDs into the Helm chart crds/ directory.
+	@mkdir -p $(HELM_CHART_DIR)/crds
+	@cp config/crd/bases/*.yaml $(HELM_CHART_DIR)/crds/
+	@echo "Synced CRDs to $(HELM_CHART_DIR)/crds/"
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.

@@ -60,8 +60,8 @@ func TestBuildWebDeployment_Minimal(t *testing.T) {
 	if deploy.Name != "test-web" {
 		t.Errorf("name = %q, want %q", deploy.Name, "test-web")
 	}
-	if deploy.Namespace != "langfuse" {
-		t.Errorf("namespace = %q, want %q", deploy.Namespace, "langfuse")
+	if deploy.Namespace != instance.Namespace {
+		t.Errorf("namespace = %q, want %q", deploy.Namespace, instance.Namespace)
 	}
 	if *deploy.Spec.Replicas != 1 {
 		t.Errorf("replicas = %d, want %d", *deploy.Spec.Replicas, 1)

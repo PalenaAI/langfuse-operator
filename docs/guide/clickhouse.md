@@ -13,11 +13,19 @@ spec:
       secretRef:
         name: langfuse-clickhouse
         keys:
-          url: url
-          migrationUrl: migration_url   # optional
+          url: url                      # HTTP interface (http://host:8123)
+          migrationUrl: migration_url   # native protocol (clickhouse://host:9000)
           username: username
           password: password
 ```
+
+::: info
+`migrationUrl` uses the ClickHouse **native protocol** (`clickhouse://host:9000`) and is required for schema migrations. `url` uses the **HTTP interface** (`http://host:8123`) for query traffic.
+:::
+
+::: tip
+For single-node ClickHouse deployments, the operator automatically sets `CLICKHOUSE_CLUSTER_ENABLED=false` to avoid `ON CLUSTER` DDL errors that require ZooKeeper/Keeper.
+:::
 
 ## Managed
 

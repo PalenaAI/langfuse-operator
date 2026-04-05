@@ -37,6 +37,14 @@ import (
 	"github.com/PalenaAI/langfuse-operator/internal/resources"
 )
 
+const (
+	phasePending   = "Pending"
+	phaseRunning   = "Running"
+	phaseMigrating = "Migrating"
+	phaseDegraded  = "Degraded"
+	phaseError     = "Error"
+)
+
 // LangfuseInstanceReconciler reconciles a LangfuseInstance object
 type LangfuseInstanceReconciler struct {
 	client.Client
@@ -64,7 +72,7 @@ func (r *LangfuseInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	// 2. Set initial phase
 	if instance.Status.Phase == "" {
-		instance.Status.Phase = "Pending"
+		instance.Status.Phase = phasePending
 		if err := r.Status().Update(ctx, instance); err != nil {
 			return ctrl.Result{}, fmt.Errorf("setting initial phase: %w", err)
 		}
@@ -199,10 +207,10 @@ func (r *LangfuseInstanceReconciler) updateStatus(ctx context.Context, instance 
 	workerReady := instance.Status.Worker != nil && instance.Status.Worker.ReadyReplicas > 0
 
 	if webReady && workerReady {
-		instance.Status.Phase = "Running"
+		instance.Status.Phase = phaseRunning
 		instance.Status.Ready = true
 	} else {
-		instance.Status.Phase = "Pending"
+		instance.Status.Phase = phasePending
 		instance.Status.Ready = false
 	}
 
@@ -229,15 +237,15 @@ func boolToConditionStatus(b bool) metav1.ConditionStatus {
 
 func phaseToReason(phase string) string {
 	switch phase {
-	case "Running":
+	case phaseRunning:
 		return "AllComponentsReady"
-	case "Pending":
+	case phasePending:
 		return "ComponentsStarting"
-	case "Migrating":
+	case phaseMigrating:
 		return "MigrationInProgress"
-	case "Degraded":
+	case phaseDegraded:
 		return "ComponentDegraded"
-	case "Error":
+	case phaseError:
 		return "ReconcileError"
 	default:
 		return "Unknown"

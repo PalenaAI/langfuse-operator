@@ -1,0 +1,67 @@
+# Default values for langfuse-operator.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/palenaai/langfuse-operator
+  tag: ""  # defaults to Chart.appVersion
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Whether to create the ServiceAccount
+  create: true
+  # Annotations to add to the ServiceAccount
+  annotations: {}
+  # Name override; defaults to fullname
+  name: ""
+
+# Leader election ensures only one replica reconciles at a time
+leaderElection:
+  enabled: true
+
+# Health and readiness probe bind address
+healthProbeBindAddress: ":8081"
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Pod-level security context
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container-level security context
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+# Additional environment variables for the manager container
+extraEnv: []
+
+# Additional volumes and volume mounts
+extraVolumes: []
+extraVolumeMounts: []
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod labels (in addition to the default labels)
+podLabels: {}

@@ -1,135 +1,119 @@
-# langfuse-operator
-// TODO(user): Add simple overview of use/purpose
+<p align="center">
+  <img src="docs/public/logo.svg" alt="Langfuse" width="120" />
+</p>
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+<h1 align="center">Langfuse Operator</h1>
 
-## Getting Started
+<p align="center">
+  A Kubernetes operator for deploying and managing production-ready
+  <a href="https://langfuse.com">Langfuse</a> LLM observability instances.
+</p>
+
+<p align="center">
+  <a href="https://github.com/PalenaAI/langfuse-operator/actions"><img src="https://github.com/PalenaAI/langfuse-operator/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/PalenaAI/langfuse-operator/releases"><img src="https://img.shields.io/github/v/release/PalenaAI/langfuse-operator" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/PalenaAI/langfuse-operator" alt="License"></a>
+</p>
+
+---
+
+## Overview
+
+The Langfuse Operator manages the full [Langfuse v3](https://langfuse.com) stack on Kubernetes through a declarative API. Define a `LangfuseInstance` custom resource and the operator handles deployments, services, configuration, and lifecycle management.
+
+### Key Features
+
+- **Full stack deployment** -- Web, Worker, PostgreSQL, ClickHouse, Redis, and Blob Storage from a single CR
+- **Automated upgrades** -- zero-downtime rollouts with database migration orchestration
+- **Secret management** -- auto-generation and rotation with rolling restarts
+- **Multi-tenancy** -- manage organizations, projects, and API keys via `LangfuseOrganization` and `LangfuseProject` CRDs
+- **Observability** -- Prometheus ServiceMonitor, OpenTelemetry integration, and operator metrics
+- **Platform support** -- Kubernetes, OpenShift, EKS, GKE, and AKS
+
+## Quick Start
 
 ### Prerequisites
-- go version v1.24.0+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
 
-### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
+- Kubernetes v1.26+
+- kubectl
+- [OLM](https://olm.operatorframework.io/) (for OLM-based install) or Helm v3
 
-```sh
-make docker-build docker-push IMG=<some-registry>/langfuse-operator:tag
+### Install with Helm
+
+```bash
+helm install langfuse-operator deploy/charts/langfuse-operator \
+  -n langfuse-operator-system --create-namespace \
+  --set image.tag=0.4.0
 ```
 
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
+This installs the CRDs, RBAC, and operator deployment. See the [chart values](deploy/charts/langfuse-operator/values.yaml) for all configuration options.
 
-**Install the CRDs into the cluster:**
+### Install CRDs only (manual deploy)
 
-```sh
-make install
+```bash
+kubectl apply -f https://raw.githubusercontent.com/PalenaAI/langfuse-operator/main/config/crd/bases/langfuse.palena.ai_langfuseinstances.yaml
+kubectl apply -f https://raw.githubusercontent.com/PalenaAI/langfuse-operator/main/config/crd/bases/langfuse.palena.ai_langfuseorganizations.yaml
+kubectl apply -f https://raw.githubusercontent.com/PalenaAI/langfuse-operator/main/config/crd/bases/langfuse.palena.ai_langfuseprojects.yaml
 ```
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+### Deploy a Langfuse Instance
 
-```sh
-make deploy IMG=<some-registry>/langfuse-operator:tag
+```yaml
+apiVersion: langfuse.palena.ai/v1alpha1
+kind: LangfuseInstance
+metadata:
+  name: langfuse
+  namespace: langfuse
+spec:
+  image:
+    tag: "3"
+  auth:
+    nextAuthUrl: "https://langfuse.example.com"
 ```
 
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
-
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
-
-```sh
-kubectl apply -k config/samples/
+```bash
+kubectl apply -f langfuse-instance.yaml
 ```
 
->**NOTE**: Ensure that the samples has default values to test it out.
+The operator creates and manages the Web and Worker deployments along with the required Service.
 
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
+### Verify
 
-```sh
-kubectl delete -k config/samples/
+```bash
+kubectl get langfuseinstances -n langfuse
 ```
 
-**Delete the APIs(CRDs) from the cluster:**
-
-```sh
-make uninstall
+```
+NAME       PHASE     READY   VERSION   AGE
+langfuse   Running   true    3         2m
 ```
 
-**UnDeploy the controller from the cluster:**
+## Custom Resources
 
-```sh
-make undeploy
-```
+| CRD | Purpose |
+|-----|---------|
+| `LangfuseInstance` | Deploys and manages a full Langfuse stack |
+| `LangfuseOrganization` | Manages organizations and member access |
+| `LangfuseProject` | Manages projects and API key Secrets |
 
-## Project Distribution
+## Documentation
 
-Following the options to release and provide this solution to the users.
+Full documentation is available at the [Langfuse Operator Docs](https://langfuse-operator.pages.dev) site, covering:
 
-### By providing a bundle with all YAML files
-
-1. Build the installer for the image built and published in the registry:
-
-```sh
-make build-installer IMG=<some-registry>/langfuse-operator:tag
-```
-
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
-
-2. Using the installer
-
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
-
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/langfuse-operator/<tag or branch>/dist/install.yaml
-```
-
-### By providing a Helm Chart
-
-1. Build the chart using the optional helm plugin
-
-```sh
-operator-sdk edit --plugins=helm/v1-alpha
-```
-
-2. See that a chart was generated under 'dist/chart', and users
-can obtain this solution from there.
-
-**NOTE:** If you change the project, you need to update the Helm Chart
-using the same command above to sync the latest changes. Furthermore,
-if you create webhooks, you need to use the above command with
-the '--force' flag and manually ensure that any custom configuration
-previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
-is manually re-applied afterwards.
+- [Installation](https://langfuse-operator.pages.dev/guide/installation) -- OLM, Helm, and manual methods
+- [Architecture](https://langfuse-operator.pages.dev/guide/architecture) -- how the operator works
+- [Database](https://langfuse-operator.pages.dev/guide/database), [ClickHouse](https://langfuse-operator.pages.dev/guide/clickhouse), [Redis](https://langfuse-operator.pages.dev/guide/redis), [Blob Storage](https://langfuse-operator.pages.dev/guide/blob-storage) -- data store configuration
+- [Authentication](https://langfuse-operator.pages.dev/guide/authentication) -- OIDC, email/password, init user
+- [Networking](https://langfuse-operator.pages.dev/guide/networking) -- Ingress, OpenShift Routes, NetworkPolicies
+- [Upgrades](https://langfuse-operator.pages.dev/guide/upgrades) -- zero-downtime upgrade strategy
+- [Secret Management](https://langfuse-operator.pages.dev/guide/secrets) -- auto-generation and rotation
+- [Multi-Tenancy](https://langfuse-operator.pages.dev/guide/multi-tenancy) -- organizations and projects
+- [CRD Reference](https://langfuse-operator.pages.dev/reference/langfuseinstance) -- full spec documentation
 
 ## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
 
-**NOTE:** Run `make help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding conventions, and how to submit changes.
 
 ## License
 
-Copyright 2026.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
+Copyright 2026 bitkaio LLC. Licensed under the [Apache License 2.0](LICENSE).

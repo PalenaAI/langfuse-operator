@@ -5189,6 +5189,19 @@ spec:
                       type: string
                     description: NodeSelector for scheduling Worker pods.
                     type: object
+                  podDisruptionBudget:
+                    description: PodDisruptionBudget configures the PDB for Worker
+                      pods.
+                    properties:
+                      enabled:
+                        description: Enabled toggles PDB creation.
+                        type: boolean
+                      minAvailable:
+                        description: MinAvailable is the minimum number of pods that
+                          must be available.
+                        format: int32
+                        type: integer
+                    type: object
                   replicas:
                     default: 1
                     description: Replicas is the number of Worker pod replicas.

@@ -8,6 +8,7 @@ rules:
   - apiGroups:
       - ""
     resources:
+      - configmaps
       - secrets
       - services
     verbs:
@@ -19,9 +20,25 @@ rules:
       - update
       - watch
   - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - persistentvolumeclaims
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
       - apps
     resources:
       - deployments
+      - statefulsets
     verbs:
       - create
       - delete
@@ -31,10 +48,9 @@ rules:
       - update
       - watch
   - apiGroups:
-      - networking.k8s.io
+      - autoscaling
     resources:
-      - ingresses
-      - networkpolicies
+      - horizontalpodautoscalers
     verbs:
       - create
       - delete
@@ -44,9 +60,9 @@ rules:
       - update
       - watch
   - apiGroups:
-      - route.openshift.io
+      - batch
     resources:
-      - routes
+      - jobs
     verbs:
       - create
       - delete
@@ -99,3 +115,52 @@ rules:
       - get
       - patch
       - update
+  - apiGroups:
+      - monitoring.coreos.com
+    resources:
+      - servicemonitors
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - networking.k8s.io
+    resources:
+      - ingresses
+      - networkpolicies
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - policy
+    resources:
+      - poddisruptionbudgets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - route.openshift.io
+    resources:
+      - routes
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch

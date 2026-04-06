@@ -76,7 +76,7 @@ spec:
 kubectl apply -f langfuse-instance.yaml
 ```
 
-The operator creates and manages the Web and Worker deployments along with the required Service.
+The operator creates and manages the Web and Worker deployments, Services, managed data stores (ClickHouse, Redis), database migrations, secrets, networking, and observability resources.
 
 ### Verify
 

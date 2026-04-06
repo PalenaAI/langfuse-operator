@@ -150,6 +150,9 @@ type WorkerSpec struct {
 	// Resources defines compute resources for Worker pods.
 	// +optional
 	Resources *ResourceRequirements `json:"resources,omitempty"`
+	// PodDisruptionBudget configures the PDB for Worker pods.
+	// +optional
+	PodDisruptionBudget *PDBSpec `json:"podDisruptionBudget,omitempty"`
 	// Concurrency sets LANGFUSE_WORKER_CONCURRENCY.
 	// +kubebuilder:default=10
 	// +optional

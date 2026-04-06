@@ -2156,6 +2156,11 @@ func (in *WorkerSpec) DeepCopyInto(out *WorkerSpec) {
 		*out = new(ResourceRequirements)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.PodDisruptionBudget != nil {
+		in, out := &in.PodDisruptionBudget, &out.PodDisruptionBudget
+		*out = new(PDBSpec)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.Concurrency != nil {
 		in, out := &in.Concurrency, &out.Concurrency
 		*out = new(int32)

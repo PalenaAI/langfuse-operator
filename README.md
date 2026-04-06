@@ -29,6 +29,7 @@ The Langfuse Operator manages the full [Langfuse v3](https://langfuse.com) stack
 - **Networking** -- Kubernetes Ingress (with TLS/cert-manager), OpenShift Routes, Gateway API HTTPRoute, and per-component NetworkPolicies
 - **Multi-tenancy** -- manage organizations, projects, and API keys via `LangfuseOrganization` and `LangfuseProject` CRDs
 - **Observability** -- Prometheus ServiceMonitor, OpenTelemetry integration, and operator metrics
+- **Namespace scoping** -- restrict the operator to specific namespaces via `WATCH_NAMESPACE` or Helm `watchNamespaces`
 - **Platform support** -- Kubernetes, OpenShift, EKS, GKE, and AKS
 
 ## Quick Start

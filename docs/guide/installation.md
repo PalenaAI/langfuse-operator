@@ -52,6 +52,23 @@ helm install langfuse-operator deploy/charts/langfuse-operator \
 
 See the [chart values](https://github.com/PalenaAI/langfuse-operator/blob/main/deploy/charts/langfuse-operator/values.yaml) for all configuration options (replicas, resources, tolerations, affinity, etc.).
 
+### Namespace-Scoped Install
+
+By default the operator watches all namespaces. To restrict it to specific namespaces:
+
+```bash
+helm install langfuse-operator deploy/charts/langfuse-operator \
+  --namespace langfuse-operator-system \
+  --create-namespace \
+  --set-string watchNamespaces="langfuse\,langfuse-staging"
+```
+
+This sets the `WATCH_NAMESPACE` environment variable on the operator pod. The operator will only cache and reconcile resources in the listed namespaces.
+
+::: tip
+OLM automatically injects `WATCH_NAMESPACE` when the operator is installed in **OwnNamespace** or **SingleNamespace** mode.
+:::
+
 ## Install with Manifests
 
 Apply the raw manifests directly:

@@ -22,6 +22,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -57,6 +58,7 @@ type LangfuseInstanceReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 
 func (r *LangfuseInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -115,7 +117,12 @@ func (r *LangfuseInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 	log.Info("reconciled worker deployment", "name", workerDeploy.Name)
 
-	// 7. Update status
+	// 7. Reconcile NetworkPolicies
+	if err := r.reconcileNetworkPolicies(ctx, instance); err != nil {
+		return ctrl.Result{}, fmt.Errorf("reconciling network policies: %w", err)
+	}
+
+	// 8. Update status
 	if err := r.updateStatus(ctx, instance); err != nil {
 		return ctrl.Result{}, fmt.Errorf("updating status: %w", err)
 	}
@@ -252,12 +259,63 @@ func phaseToReason(phase string) string {
 	}
 }
 
+func (r *LangfuseInstanceReconciler) reconcileNetworkPolicies(ctx context.Context, instance *v1alpha1.LangfuseInstance) error {
+	log := logf.FromContext(ctx)
+
+	// Check if NetworkPolicy is disabled
+	if instance.Spec.Security != nil &&
+		instance.Spec.Security.NetworkPolicy != nil &&
+		instance.Spec.Security.NetworkPolicy.Enabled != nil &&
+		!*instance.Spec.Security.NetworkPolicy.Enabled {
+		// TODO: delete existing NetworkPolicies if they were previously created
+		return nil
+	}
+
+	webNetpol := resources.BuildWebNetworkPolicy(instance)
+	if err := r.reconcileNetworkPolicy(ctx, instance, webNetpol); err != nil {
+		return fmt.Errorf("web network policy: %w", err)
+	}
+	log.Info("reconciled web network policy", "name", webNetpol.Name)
+
+	workerNetpol := resources.BuildWorkerNetworkPolicy(instance)
+	if err := r.reconcileNetworkPolicy(ctx, instance, workerNetpol); err != nil {
+		return fmt.Errorf("worker network policy: %w", err)
+	}
+	log.Info("reconciled worker network policy", "name", workerNetpol.Name)
+
+	return nil
+}
+
+func (r *LangfuseInstanceReconciler) reconcileNetworkPolicy(ctx context.Context, instance *v1alpha1.LangfuseInstance, desired *networkingv1.NetworkPolicy) error {
+	if err := controllerutil.SetControllerReference(instance, desired, r.Scheme); err != nil {
+		return fmt.Errorf("setting owner reference: %w", err)
+	}
+
+	existing := &networkingv1.NetworkPolicy{}
+	err := r.Get(ctx, client.ObjectKeyFromObject(desired), existing)
+	if apierrors.IsNotFound(err) {
+		return r.Create(ctx, desired)
+	}
+	if err != nil {
+		return fmt.Errorf("getting network policy: %w", err)
+	}
+
+	if !equality.Semantic.DeepEqual(existing.Spec, desired.Spec) {
+		existing.Spec = desired.Spec
+		existing.Labels = desired.Labels
+		return r.Update(ctx, existing)
+	}
+
+	return nil
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *LangfuseInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.LangfuseInstance{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
+		Owns(&networkingv1.NetworkPolicy{}).
 		Named("langfuseinstance").
 		Complete(r)
 }

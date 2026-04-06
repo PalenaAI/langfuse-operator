@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Helm chart** for installing the operator on non-OLM clusters (`deploy/charts/langfuse-operator/`)
 - **Automatic CRD sync** into the Helm chart via `make manifests` / `make sync-helm-crds`
+- **NetworkPolicy support** — creates per-component policies by default (web: ingress on 3000, worker: deny all ingress; both: egress to data stores and DNS). Disable with `spec.security.networkPolicy.enabled: false`
 - **Minikube test manifests** for local end-to-end testing with PostgreSQL, ClickHouse, Redis, and MinIO (`test/minikube/`)
 
 ### Fixed

@@ -26,6 +26,7 @@ The Langfuse Operator manages the full [Langfuse v3](https://langfuse.com) stack
 - **Full stack deployment** -- Web, Worker, PostgreSQL, ClickHouse, Redis, and Blob Storage from a single CR
 - **Automated upgrades** -- zero-downtime rollouts with database migration orchestration
 - **Secret management** -- auto-generation and rotation with rolling restarts
+- **Network security** -- per-component NetworkPolicies enabled by default, restricting traffic to only what Langfuse needs
 - **Multi-tenancy** -- manage organizations, projects, and API keys via `LangfuseOrganization` and `LangfuseProject` CRDs
 - **Observability** -- Prometheus ServiceMonitor, OpenTelemetry integration, and operator metrics
 - **Platform support** -- Kubernetes, OpenShift, EKS, GKE, and AKS
@@ -43,7 +44,7 @@ The Langfuse Operator manages the full [Langfuse v3](https://langfuse.com) stack
 ```bash
 helm install langfuse-operator deploy/charts/langfuse-operator \
   -n langfuse-operator-system --create-namespace \
-  --set image.tag=0.4.0
+  --set image.tag=0.5.0
 ```
 
 This installs the CRDs, RBAC, and operator deployment. See the [chart values](deploy/charts/langfuse-operator/values.yaml) for all configuration options.

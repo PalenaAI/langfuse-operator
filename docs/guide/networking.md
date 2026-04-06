@@ -53,7 +53,7 @@ Only one of `ingress` or `route` should be enabled.
 
 ## NetworkPolicy
 
-The operator creates a NetworkPolicy by default that restricts traffic to only what Langfuse needs:
+The operator creates per-component NetworkPolicies by default that restrict traffic to only what Langfuse needs:
 
 ```yaml
 spec:
@@ -62,8 +62,28 @@ spec:
       enabled: true    # default: true
 ```
 
-The generated policy allows:
+To disable:
 
-- Ingress to Web pods on port 3000 (from Ingress controller or any pod)
-- Egress to PostgreSQL, ClickHouse, Redis, and blob storage endpoints
-- Egress for DNS resolution
+```yaml
+spec:
+  security:
+    networkPolicy:
+      enabled: false
+```
+
+### Web NetworkPolicy (`<name>-web-netpol`)
+
+| Direction | Rule |
+|-----------|------|
+| **Ingress** | Allow TCP port 3000 from any source |
+| **Egress** | Allow TCP to PostgreSQL (5432), ClickHouse (8123, 9000), Redis (6379), HTTPS (443), internal (3000) |
+| **Egress** | Allow DNS (UDP+TCP port 53) |
+
+### Worker NetworkPolicy (`<name>-worker-netpol`)
+
+| Direction | Rule |
+|-----------|------|
+| **Ingress** | Deny all (worker exposes no ports) |
+| **Egress** | Same as Web |
+
+Both policies are owned by the `LangfuseInstance` CR and are automatically deleted when the instance is removed.

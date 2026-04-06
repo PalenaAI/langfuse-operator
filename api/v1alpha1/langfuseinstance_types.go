@@ -704,6 +704,33 @@ type RouteSpec struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
+// GatewayAPISpec configures a Gateway API HTTPRoute for the Web component.
+type GatewayAPISpec struct {
+	// Enabled toggles HTTPRoute creation.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+	// GatewayRef references the Gateway this route attaches to.
+	GatewayRef GatewayRef `json:"gatewayRef"`
+	// Hostname is the HTTP hostname to match.
+	// +optional
+	Hostname string `json:"hostname,omitempty"`
+	// Annotations are additional HTTPRoute annotations.
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+// GatewayRef references a Gateway API Gateway.
+type GatewayRef struct {
+	// Name of the Gateway.
+	Name string `json:"name"`
+	// Namespace of the Gateway. Defaults to the HTTPRoute namespace.
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
+	// SectionName is the listener name on the Gateway.
+	// +optional
+	SectionName string `json:"sectionName,omitempty"`
+}
+
 // ─── Security ───────────────────────────────────────────────────────────────
 
 // SecuritySpec defines security settings.
@@ -916,6 +943,9 @@ type LangfuseInstanceSpec struct {
 	// Route configures OpenShift Route.
 	// +optional
 	Route *RouteSpec `json:"route,omitempty"`
+	// GatewayAPI configures Gateway API HTTPRoute.
+	// +optional
+	GatewayAPI *GatewayAPISpec `json:"gatewayAPI,omitempty"`
 	// Security configures security settings.
 	// +optional
 	Security *SecuritySpec `json:"security,omitempty"`

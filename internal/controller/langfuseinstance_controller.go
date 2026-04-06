@@ -27,7 +27,9 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -59,6 +61,9 @@ type LangfuseInstanceReconciler struct {
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=httproutes,verbs=get;list;watch;create;update;patch;delete
 
 func (r *LangfuseInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -122,7 +127,34 @@ func (r *LangfuseInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, fmt.Errorf("reconciling network policies: %w", err)
 	}
 
-	// 8. Update status
+	// 8. Reconcile Ingress
+	if instance.Spec.Ingress != nil && instance.Spec.Ingress.Enabled {
+		ingress := resources.BuildIngress(instance)
+		if err := r.reconcileIngress(ctx, instance, ingress); err != nil {
+			return ctrl.Result{}, fmt.Errorf("reconciling ingress: %w", err)
+		}
+		log.Info("reconciled ingress", "name", ingress.Name)
+	}
+
+	// 9. Reconcile OpenShift Route
+	if instance.Spec.Route != nil && instance.Spec.Route.Enabled {
+		route := resources.BuildRoute(instance)
+		if err := r.reconcileUnstructured(ctx, instance, route); err != nil {
+			return ctrl.Result{}, fmt.Errorf("reconciling route: %w", err)
+		}
+		log.Info("reconciled openshift route", "name", route.GetName())
+	}
+
+	// 10. Reconcile Gateway API HTTPRoute
+	if instance.Spec.GatewayAPI != nil && instance.Spec.GatewayAPI.Enabled {
+		httpRoute := resources.BuildHTTPRoute(instance)
+		if err := r.reconcileUnstructured(ctx, instance, httpRoute); err != nil {
+			return ctrl.Result{}, fmt.Errorf("reconciling httproute: %w", err)
+		}
+		log.Info("reconciled httproute", "name", httpRoute.GetName())
+	}
+
+	// 11. Update status
 	if err := r.updateStatus(ctx, instance); err != nil {
 		return ctrl.Result{}, fmt.Errorf("updating status: %w", err)
 	}
@@ -286,6 +318,59 @@ func (r *LangfuseInstanceReconciler) reconcileNetworkPolicies(ctx context.Contex
 	return nil
 }
 
+func (r *LangfuseInstanceReconciler) reconcileIngress(ctx context.Context, instance *v1alpha1.LangfuseInstance, desired *networkingv1.Ingress) error {
+	if err := controllerutil.SetControllerReference(instance, desired, r.Scheme); err != nil {
+		return fmt.Errorf("setting owner reference: %w", err)
+	}
+
+	existing := &networkingv1.Ingress{}
+	err := r.Get(ctx, client.ObjectKeyFromObject(desired), existing)
+	if apierrors.IsNotFound(err) {
+		return r.Create(ctx, desired)
+	}
+	if err != nil {
+		return fmt.Errorf("getting ingress: %w", err)
+	}
+
+	if !equality.Semantic.DeepEqual(existing.Spec, desired.Spec) ||
+		!equality.Semantic.DeepEqual(existing.Annotations, desired.Annotations) {
+		existing.Spec = desired.Spec
+		existing.Labels = desired.Labels
+		existing.Annotations = desired.Annotations
+		return r.Update(ctx, existing)
+	}
+
+	return nil
+}
+
+func (r *LangfuseInstanceReconciler) reconcileUnstructured(ctx context.Context, instance *v1alpha1.LangfuseInstance, desired *unstructured.Unstructured) error {
+	if err := controllerutil.SetControllerReference(instance, desired, r.Scheme); err != nil {
+		return fmt.Errorf("setting owner reference: %w", err)
+	}
+
+	existing := &unstructured.Unstructured{}
+	existing.SetGroupVersionKind(desired.GroupVersionKind())
+	err := r.Get(ctx, client.ObjectKeyFromObject(desired), existing)
+	if apierrors.IsNotFound(err) {
+		return r.Create(ctx, desired)
+	}
+	if err != nil {
+		return fmt.Errorf("getting %s: %w", desired.GetKind(), err)
+	}
+
+	// Update spec if changed
+	desiredSpec := desired.Object["spec"]
+	existingSpec := existing.Object["spec"]
+	if !equality.Semantic.DeepEqual(existingSpec, desiredSpec) {
+		existing.Object["spec"] = desiredSpec
+		existing.SetLabels(desired.GetLabels())
+		existing.SetAnnotations(desired.GetAnnotations())
+		return r.Update(ctx, existing)
+	}
+
+	return nil
+}
+
 func (r *LangfuseInstanceReconciler) reconcileNetworkPolicy(ctx context.Context, instance *v1alpha1.LangfuseInstance, desired *networkingv1.NetworkPolicy) error {
 	if err := controllerutil.SetControllerReference(instance, desired, r.Scheme); err != nil {
 		return fmt.Errorf("setting owner reference: %w", err)
@@ -311,11 +396,29 @@ func (r *LangfuseInstanceReconciler) reconcileNetworkPolicy(ctx context.Context,
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *LangfuseInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.LangfuseInstance{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
 		Owns(&networkingv1.NetworkPolicy{}).
-		Named("langfuseinstance").
-		Complete(r)
+		Owns(&networkingv1.Ingress{}).
+		Named("langfuseinstance")
+
+	// Watch OpenShift Routes if the API is available
+	routeGVK := schema.GroupVersionKind{Group: "route.openshift.io", Version: "v1", Kind: "Route"}
+	if _, err := mgr.GetRESTMapper().RESTMapping(routeGVK.GroupKind(), routeGVK.Version); err == nil {
+		route := &unstructured.Unstructured{}
+		route.SetGroupVersionKind(routeGVK)
+		builder = builder.Owns(route)
+	}
+
+	// Watch Gateway API HTTPRoutes if the API is available
+	httpRouteGVK := schema.GroupVersionKind{Group: "gateway.networking.k8s.io", Version: "v1", Kind: "HTTPRoute"}
+	if _, err := mgr.GetRESTMapper().RESTMapping(httpRouteGVK.GroupKind(), httpRouteGVK.Version); err == nil {
+		httpRoute := &unstructured.Unstructured{}
+		httpRoute.SetGroupVersionKind(httpRouteGVK)
+		builder = builder.Owns(httpRoute)
+	}
+
+	return builder.Complete(r)
 }

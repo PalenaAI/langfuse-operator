@@ -82,7 +82,7 @@ metadata:
     capabilities: Deep Insights
     categories: AI/Machine Learning, Monitoring
     containerImage: ghcr.io/palenaai/langfuse-operator:v0.5.0
-    createdAt: "2026-04-06T19:24:39Z"
+    createdAt: "2026-04-06T19:45:34Z"
     description: Kubernetes operator for deploying and managing production-ready Langfuse
       LLM observability instances.
     operators.operatorframework.io/builder: operator-sdk-v1.42.1
@@ -164,6 +164,18 @@ spec:
           - update
           - watch
         - apiGroups:
+          - gateway.networking.k8s.io
+          resources:
+          - httproutes
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
           - langfuse.palena.ai
           resources:
           - langfuseinstances
@@ -198,7 +210,20 @@ spec:
         - apiGroups:
           - networking.k8s.io
           resources:
+          - ingresses
           - networkpolicies
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - route.openshift.io
+          resources:
+          - routes
           verbs:
           - create
           - delete
@@ -248,7 +273,7 @@ spec:
                 - --health-probe-bind-address=:8081
                 command:
                 - /manager
-                image: ghcr.io/palenaai/langfuse-operator:0.5.0
+                image: controller:latest
                 livenessProbe:
                   httpGet:
                     path: /healthz

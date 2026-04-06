@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Ingress support** — creates a Kubernetes Ingress from `spec.ingress` with IngressClassName, TLS (manual secret or cert-manager auto-provisioning), and custom annotations
+- **OpenShift Route support** — creates an OpenShift Route from `spec.route` with edge TLS termination, optional host, and custom annotations (uses unstructured objects to avoid OpenShift API dependency)
+- **Gateway API support** — creates an HTTPRoute from `spec.gatewayAPI` referencing an existing Gateway, with optional hostname and annotations (uses unstructured objects to avoid Gateway API dependency)
+
 ## [0.5.0] - 2026-04-05
 
 ### Added

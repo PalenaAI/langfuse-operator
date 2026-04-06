@@ -121,16 +121,18 @@ vet: ## Run go vet against code.
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
-# TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
-# The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
-# CertManager is installed by default; skip with:
-# - CERT_MANAGER_INSTALL_SKIP=true
+# E2E tests run against a Kind cluster. The suite builds the operator image,
+# loads it into Kind, deploys dependencies + CRDs, and exercises full
+# LangfuseInstance reconciliation.
 KIND_CLUSTER ?= langfuse-operator-test-e2e
+KIND_CONFIG  ?= test/e2e/kind-config.yaml
+E2E_IMG      ?= ghcr.io/palenaai/langfuse-operator:e2e-test
+E2E_TIMEOUT  ?= 30m
 
 .PHONY: setup-test-e2e
-setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
+setup-test-e2e: ## Create a Kind cluster for e2e tests (idempotent)
 	@command -v $(KIND) >/dev/null 2>&1 || { \
-		echo "Kind is not installed. Please install Kind manually."; \
+		echo "Kind is not installed. Please install Kind: https://kind.sigs.k8s.io/docs/user/quick-start/#installation"; \
 		exit 1; \
 	}
 	@case "$$($(KIND) get clusters)" in \
@@ -138,13 +140,15 @@ setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 			echo "Kind cluster '$(KIND_CLUSTER)' already exists. Skipping creation." ;; \
 		*) \
 			echo "Creating Kind cluster '$(KIND_CLUSTER)'..."; \
-			$(KIND) create cluster --name $(KIND_CLUSTER) ;; \
+			$(KIND) create cluster --name $(KIND_CLUSTER) --config $(KIND_CONFIG) ;; \
 	esac
 
 .PHONY: test-e2e
-test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
-	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v
-	$(MAKE) cleanup-test-e2e
+test-e2e: setup-test-e2e manifests generate fmt vet ## Run e2e tests against a Kind cluster
+	KIND_CLUSTER=$(KIND_CLUSTER) IMG=$(E2E_IMG) go test ./test/e2e/ -v -ginkgo.v -timeout $(E2E_TIMEOUT)
+
+.PHONY: test-e2e-ci
+test-e2e-ci: test-e2e cleanup-test-e2e ## Run e2e tests and tear down the cluster (for CI)
 
 .PHONY: cleanup-test-e2e
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests

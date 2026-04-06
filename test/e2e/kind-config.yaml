@@ -1,0 +1,12 @@
+# Kind cluster configuration for E2E tests.
+# Usage: kind create cluster --name langfuse-operator-test-e2e --config test/e2e/kind-config.yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"

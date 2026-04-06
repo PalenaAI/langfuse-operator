@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **LangfuseOrganization controller** — full reconciliation with finalizer, member sync (additive and exclusive modes), role-based access, and deletion protection when dependent projects exist
 - **LangfuseProject controller** — full reconciliation with finalizer, API key sync, Kubernetes Secret creation with publicKey/secretKey/host, and cascading cleanup on deletion
 - **Namespace scoping** — `WATCH_NAMESPACE` env var and `--watch-namespaces` CLI flag to restrict the operator to specific namespaces (comma-separated); defaults to all namespaces. Helm chart exposes `watchNamespaces` value
+- **Kind-based E2E test suite** — full-stack E2E tests running in Kind with PostgreSQL, ClickHouse, Redis, and MinIO dependencies; verifies resource creation, labels, owner references, pod health, Langfuse health endpoint, CR updates, garbage collection, and managed data store lifecycle
 
 ## [0.5.0] - 2026-04-05
 

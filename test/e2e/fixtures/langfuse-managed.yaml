@@ -1,0 +1,66 @@
+---
+# Secrets for PostgreSQL (external) and S3 (external).
+# ClickHouse and Redis are managed by the operator.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: langfuse-mgd-secrets
+  namespace: langfuse-e2e
+type: Opaque
+stringData:
+  database-url: "postgresql://langfuse:langfuse@postgres:5432/langfuse"
+  s3-access-key: "minioadmin"
+  s3-secret-key: "minioadmin"
+---
+# Pre-create the generated secrets that the operator would auto-generate.
+# In E2E the SecretController may or may not run fast enough, so we provide them upfront.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: langfuse-mgd-generated-secrets
+  namespace: langfuse-e2e
+type: Opaque
+stringData:
+  nextauth-secret: "e2e-managed-nextauth-secret"
+  salt: "e2e-managed-salt"
+  clickhouse-username: "default"
+  clickhouse-password: "clickhousepass"
+  redis-password: "redispass"
+---
+apiVersion: langfuse.palena.ai/v1alpha1
+kind: LangfuseInstance
+metadata:
+  name: langfuse-mgd
+  namespace: langfuse-e2e
+spec:
+  image:
+    tag: "3.163.0"
+  auth:
+    nextAuthUrl: "http://localhost:3000"
+  database:
+    external:
+      secretRef:
+        name: langfuse-mgd-secrets
+        keys:
+          url: database-url
+  clickhouse:
+    managed:
+      replicas: 1
+      storageSize: 1Gi
+  redis:
+    managed:
+      replicas: 1
+      storageSize: 1Gi
+  blobStorage:
+    provider: s3
+    s3:
+      bucket: langfuse
+      region: us-east-1
+      endpoint: http://minio:9000
+      forcePathStyle: true
+      credentials:
+        secretRef:
+          name: langfuse-mgd-secrets
+          keys:
+            accessKeyId: s3-access-key
+            secretAccessKey: s3-secret-key

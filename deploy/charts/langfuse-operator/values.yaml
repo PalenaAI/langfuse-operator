@@ -53,6 +53,11 @@ securityContext:
     drop:
       - ALL
 
+# Comma-separated list of namespaces to watch.
+# If empty, the operator watches all namespaces (cluster-scoped).
+# Example: "langfuse,langfuse-staging"
+watchNamespaces: ""
+
 # Additional environment variables for the manager container
 extraEnv: []
 

@@ -1,0 +1,75 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: langfuse-secrets
+  namespace: langfuse
+type: Opaque
+stringData:
+  nextauth-secret: "my-nextauth-secret-for-testing-only"
+  salt: "my-salt-for-testing-only"
+  database-url: "postgresql://langfuse:langfuse@postgres:5432/langfuse"
+  clickhouse-url: "http://clickhouse:8123"
+  clickhouse-migration-url: "clickhouse://clickhouse:9000"
+  clickhouse-user: "langfuse"
+  clickhouse-password: "langfuse"
+  redis-host: "redis"
+  redis-port: "6379"
+  redis-password: "langfuse"
+  s3-access-key: "minioadmin"
+  s3-secret-key: "minioadmin"
+---
+apiVersion: langfuse.palena.ai/v1alpha1
+kind: LangfuseInstance
+metadata:
+  name: langfuse
+  namespace: langfuse
+spec:
+  image:
+    tag: "3.163.0"
+  auth:
+    nextAuthUrl: "http://localhost:3000"
+    nextAuthSecret:
+      secretRef:
+        name: langfuse-secrets
+        key: nextauth-secret
+    salt:
+      secretRef:
+        name: langfuse-secrets
+        key: salt
+  database:
+    external:
+      secretRef:
+        name: langfuse-secrets
+        keys:
+          url: database-url
+  clickhouse:
+    external:
+      secretRef:
+        name: langfuse-secrets
+        keys:
+          url: clickhouse-url
+          migrationUrl: clickhouse-migration-url
+          username: clickhouse-user
+          password: clickhouse-password
+  redis:
+    external:
+      secretRef:
+        name: langfuse-secrets
+        keys:
+          host: redis-host
+          port: redis-port
+          password: redis-password
+  blobStorage:
+    provider: s3
+    s3:
+      bucket: langfuse
+      region: us-east-1
+      endpoint: http://minio:9000
+      forcePathStyle: true
+      credentials:
+        secretRef:
+          name: langfuse-secrets
+          keys:
+            accessKeyId: s3-access-key
+            secretAccessKey: s3-secret-key

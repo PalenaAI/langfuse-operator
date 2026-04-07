@@ -17,21 +17,16 @@ limitations under the License.
 package utils
 
 import (
-	"bufio"
-	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
-	. "github.com/onsi/ginkgo/v2" // nolint:revive,staticcheck
+	. "github.com/onsi/ginkgo/v2" //nolint:revive,staticcheck
 )
 
 const (
-	prometheusOperatorVersion = "v0.77.1"
-	prometheusOperatorURL     = "https://github.com/prometheus-operator/prometheus-operator/" +
-		"releases/download/%s/bundle.yaml"
-
 	certmanagerVersion = "v1.16.3"
 	certmanagerURLTmpl = "https://github.com/cert-manager/cert-manager/releases/download/%s/cert-manager.yaml"
 )
@@ -40,7 +35,7 @@ func warnError(err error) {
 	_, _ = fmt.Fprintf(GinkgoWriter, "warning: %v\n", err)
 }
 
-// Run executes the provided command within this context
+// Run executes the provided command within the project directory.
 func Run(cmd *exec.Cmd) (string, error) {
 	dir, _ := GetProjectDir()
 	cmd.Dir = dir
@@ -60,50 +55,6 @@ func Run(cmd *exec.Cmd) (string, error) {
 	return string(output), nil
 }
 
-// InstallPrometheusOperator installs the prometheus Operator to be used to export the enabled metrics.
-func InstallPrometheusOperator() error {
-	url := fmt.Sprintf(prometheusOperatorURL, prometheusOperatorVersion)
-	cmd := exec.Command("kubectl", "create", "-f", url)
-	_, err := Run(cmd)
-	return err
-}
-
-// UninstallPrometheusOperator uninstalls the prometheus
-func UninstallPrometheusOperator() {
-	url := fmt.Sprintf(prometheusOperatorURL, prometheusOperatorVersion)
-	cmd := exec.Command("kubectl", "delete", "-f", url)
-	if _, err := Run(cmd); err != nil {
-		warnError(err)
-	}
-}
-
-// IsPrometheusCRDsInstalled checks if any Prometheus CRDs are installed
-// by verifying the existence of key CRDs related to Prometheus.
-func IsPrometheusCRDsInstalled() bool {
-	// List of common Prometheus CRDs
-	prometheusCRDs := []string{
-		"prometheuses.monitoring.coreos.com",
-		"prometheusrules.monitoring.coreos.com",
-		"prometheusagents.monitoring.coreos.com",
-	}
-
-	cmd := exec.Command("kubectl", "get", "crds", "-o", "custom-columns=NAME:.metadata.name")
-	output, err := Run(cmd)
-	if err != nil {
-		return false
-	}
-	crdList := GetNonEmptyLines(output)
-	for _, crd := range prometheusCRDs {
-		for _, line := range crdList {
-			if strings.Contains(line, crd) {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
 // UninstallCertManager uninstalls the cert manager
 func UninstallCertManager() {
 	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
@@ -120,8 +71,6 @@ func InstallCertManager() error {
 	if _, err := Run(cmd); err != nil {
 		return err
 	}
-	// Wait for cert-manager-webhook to be ready, which can take time if cert-manager
-	// was re-installed after uninstalling on a cluster.
 	cmd = exec.Command("kubectl", "wait", "deployment.apps/cert-manager-webhook",
 		"--for", "condition=Available",
 		"--namespace", "cert-manager",
@@ -132,40 +81,26 @@ func InstallCertManager() error {
 	return err
 }
 
-// IsCertManagerCRDsInstalled checks if any Cert Manager CRDs are installed
-// by verifying the existence of key CRDs related to Cert Manager.
+// IsCertManagerCRDsInstalled checks if any Cert Manager CRDs are installed.
 func IsCertManagerCRDsInstalled() bool {
-	// List of common Cert Manager CRDs
 	certManagerCRDs := []string{
 		"certificates.cert-manager.io",
 		"issuers.cert-manager.io",
-		"clusterissuers.cert-manager.io",
-		"certificaterequests.cert-manager.io",
-		"orders.acme.cert-manager.io",
-		"challenges.acme.cert-manager.io",
 	}
-
-	// Execute the kubectl command to get all CRDs
 	cmd := exec.Command("kubectl", "get", "crds")
 	output, err := Run(cmd)
 	if err != nil {
 		return false
 	}
-
-	// Check if any of the Cert Manager CRDs are present
-	crdList := GetNonEmptyLines(output)
 	for _, crd := range certManagerCRDs {
-		for _, line := range crdList {
-			if strings.Contains(line, crd) {
-				return true
-			}
+		if strings.Contains(output, crd) {
+			return true
 		}
 	}
-
 	return false
 }
 
-// LoadImageToKindClusterWithName loads a local docker image to the kind cluster
+// LoadImageToKindClusterWithName loads a local docker image to the kind cluster.
 func LoadImageToKindClusterWithName(name string) error {
 	cluster := "kind"
 	if v, ok := os.LookupEnv("KIND_CLUSTER"); ok {
@@ -177,8 +112,7 @@ func LoadImageToKindClusterWithName(name string) error {
 	return err
 }
 
-// GetNonEmptyLines converts given command output string into individual objects
-// according to line breakers, and ignores the empty elements in it.
+// GetNonEmptyLines splits output into non-empty lines.
 func GetNonEmptyLines(output string) []string {
 	var res []string
 	elements := strings.Split(output, "\n")
@@ -187,11 +121,10 @@ func GetNonEmptyLines(output string) []string {
 			res = append(res, element)
 		}
 	}
-
 	return res
 }
 
-// GetProjectDir will return the directory where the project is
+// GetProjectDir returns the project root directory.
 func GetProjectDir() (string, error) {
 	wd, err := os.Getwd()
 	if err != nil {
@@ -201,54 +134,70 @@ func GetProjectDir() (string, error) {
 	return wd, nil
 }
 
-// UncommentCode searches for target in the file and remove the comment prefix
-// of the target content. The target content may span multiple lines.
-func UncommentCode(filename, target, prefix string) error {
-	// false positive
-	// nolint:gosec
-	content, err := os.ReadFile(filename)
-	if err != nil {
-		return fmt.Errorf("failed to read file %q: %w", filename, err)
-	}
-	strContent := string(content)
+// FixtureDir returns the absolute path to a fixture file.
+func FixtureDir(name string) string {
+	dir, _ := GetProjectDir()
+	return filepath.Join(dir, "test", "e2e", "fixtures", name)
+}
 
-	idx := strings.Index(strContent, target)
-	if idx < 0 {
-		return fmt.Errorf("unable to find the code %q to be uncomment", target)
-	}
+// WaitForDeploymentReady waits until a Deployment in the given namespace has all replicas available.
+func WaitForDeploymentReady(namespace, name, timeout string) error {
+	cmd := exec.Command("kubectl", "wait", "deployment/"+name,
+		"--for", "condition=Available",
+		"--namespace", namespace,
+		"--timeout", timeout,
+	)
+	_, err := Run(cmd)
+	return err
+}
 
-	out := new(bytes.Buffer)
-	_, err = out.Write(content[:idx])
-	if err != nil {
-		return fmt.Errorf("failed to write to output: %w", err)
-	}
+// WaitForJobComplete waits for a Job to reach the Complete condition.
+func WaitForJobComplete(namespace, name, timeout string) error {
+	cmd := exec.Command("kubectl", "wait", "job/"+name,
+		"--for", "condition=Complete",
+		"--namespace", namespace,
+		"--timeout", timeout,
+	)
+	_, err := Run(cmd)
+	return err
+}
 
-	scanner := bufio.NewScanner(bytes.NewBufferString(target))
-	if !scanner.Scan() {
-		return nil
-	}
-	for {
-		if _, err = out.WriteString(strings.TrimPrefix(scanner.Text(), prefix)); err != nil {
-			return fmt.Errorf("failed to write to output: %w", err)
-		}
-		// Avoid writing a newline in case the previous line was the last in target.
-		if !scanner.Scan() {
-			break
-		}
-		if _, err = out.WriteString("\n"); err != nil {
-			return fmt.Errorf("failed to write to output: %w", err)
-		}
-	}
+// KubectlApply applies a YAML file via kubectl.
+func KubectlApply(file string) error {
+	cmd := exec.Command("kubectl", "apply", "-f", file)
+	_, err := Run(cmd)
+	return err
+}
 
-	if _, err = out.Write(content[idx+len(target):]); err != nil {
-		return fmt.Errorf("failed to write to output: %w", err)
-	}
+// KubectlDelete deletes resources defined in a YAML file.
+func KubectlDelete(file string) error {
+	cmd := exec.Command("kubectl", "delete", "--ignore-not-found", "-f", file)
+	_, err := Run(cmd)
+	return err
+}
 
-	// false positive
-	// nolint:gosec
-	if err = os.WriteFile(filename, out.Bytes(), 0644); err != nil {
-		return fmt.Errorf("failed to write file %q: %w", filename, err)
-	}
+// KubectlGet runs kubectl get and returns the output.
+func KubectlGet(args ...string) (string, error) {
+	cmdArgs := append([]string{"get"}, args...)
+	cmd := exec.Command("kubectl", cmdArgs...)
+	return Run(cmd)
+}
 
-	return nil
+// KubectlGetJSON runs kubectl get with -o json and returns the raw output.
+func KubectlGetJSON(args ...string) (string, error) {
+	cmdArgs := append([]string{"get"}, args...)
+	cmdArgs = append(cmdArgs, "-o", "json")
+	cmd := exec.Command("kubectl", cmdArgs...)
+	return Run(cmd)
+}
+
+// KubectlPatch patches a resource using a strategic merge patch.
+func KubectlPatch(resource, name, namespace, patch string) error {
+	cmd := exec.Command("kubectl", "patch", resource, name,
+		"--namespace", namespace,
+		"--type", "merge",
+		"-p", patch,
+	)
+	_, err := Run(cmd)
+	return err
 }

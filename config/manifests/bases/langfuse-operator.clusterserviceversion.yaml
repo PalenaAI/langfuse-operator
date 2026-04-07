@@ -5,7 +5,7 @@ metadata:
     alm-examples: '[]'
     capabilities: Deep Insights
     categories: AI/Machine Learning, Monitoring
-    containerImage: ghcr.io/palenaai/langfuse-operator:0.5.0
+    containerImage: ghcr.io/palenaai/langfuse-operator:v0.5.0
     description: Kubernetes operator for deploying and managing production-ready Langfuse
       LLM observability instances.
     repository: https://github.com/PalenaAI/langfuse-operator
@@ -46,6 +46,11 @@ spec:
     - ClickHouse data retention and schema drift detection
     - Prometheus metrics and OpenTelemetry integration
     - Support for Kubernetes, OpenShift, EKS, GKE, and AKS
+
+    ### Prerequisites
+    - Kubernetes v1.26+
+    - (Optional) External PostgreSQL and ClickHouse if not using the built-in deployments
+    - (Optional) S3-compatible blob storage for trace attachments
   displayName: Langfuse Operator
   icon:
   - base64data: ""
@@ -76,11 +81,11 @@ spec:
   - name: Documentation
     url: https://github.com/PalenaAI/langfuse-operator
   maintainers:
-  - email: info@bitkai.io
-    name: bitkaio
+  - email: team@bitkaio.com
+    name: bitkaio LLC
   maturity: alpha
   minKubeVersion: 1.26.0
   provider:
     name: bitkaio LLC
-    url: https://bitkai.io
+    url: https://palena.ai
   version: 0.5.0

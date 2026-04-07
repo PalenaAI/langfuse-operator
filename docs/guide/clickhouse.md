@@ -53,7 +53,7 @@ Resource presets:
 
 | Preset | CPU Request | Memory Request |
 |---|---|---|
-| `small` | 1 | 4Gi |
+| `small` | 1 | 2Gi |
 | `medium` | 2 | 8Gi |
 | `large` | 4 | 16Gi |
 | `custom` | user-defined | user-defined |

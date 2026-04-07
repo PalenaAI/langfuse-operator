@@ -25,8 +25,8 @@ func TestBuildWorkerDeployment_Minimal(t *testing.T) {
 	config := buildConfig(instance)
 	deploy := BuildWorkerDeployment(instance, config)
 
-	if deploy.Name != "test-worker" {
-		t.Errorf("name = %q, want %q", deploy.Name, "test-worker")
+	if deploy.Name != testWorkerName {
+		t.Errorf("name = %q, want %q", deploy.Name, testWorkerName)
 	}
 	if deploy.Namespace != instance.Namespace {
 		t.Errorf("namespace = %q, want %q", deploy.Namespace, instance.Namespace)

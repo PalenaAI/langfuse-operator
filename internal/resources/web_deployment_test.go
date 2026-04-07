@@ -27,6 +27,12 @@ import (
 	"github.com/PalenaAI/langfuse-operator/internal/langfuse"
 )
 
+const (
+	testWebName    = "test-web"
+	testWorkerName = "test-worker"
+	testHostname   = "langfuse.example.com"
+)
+
 func ptrInt32(v int32) *int32 { return &v }
 func ptrBool(v bool) *bool    { return &v }
 
@@ -57,8 +63,8 @@ func TestBuildWebDeployment_Minimal(t *testing.T) {
 	config := buildConfig(instance)
 	deploy := BuildWebDeployment(instance, config)
 
-	if deploy.Name != "test-web" {
-		t.Errorf("name = %q, want %q", deploy.Name, "test-web")
+	if deploy.Name != testWebName {
+		t.Errorf("name = %q, want %q", deploy.Name, testWebName)
 	}
 	if deploy.Namespace != instance.Namespace {
 		t.Errorf("namespace = %q, want %q", deploy.Namespace, instance.Namespace)

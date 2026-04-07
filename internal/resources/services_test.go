@@ -26,8 +26,8 @@ func TestBuildWebService(t *testing.T) {
 	instance := minimalInstance()
 	svc := BuildWebService(instance)
 
-	if svc.Name != "test-web" {
-		t.Errorf("name = %q, want %q", svc.Name, "test-web")
+	if svc.Name != testWebName {
+		t.Errorf("name = %q, want %q", svc.Name, testWebName)
 	}
 	if svc.Namespace != "langfuse" {
 		t.Errorf("namespace = %q, want %q", svc.Namespace, "langfuse")

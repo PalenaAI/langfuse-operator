@@ -7,12 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Managed ClickHouse** — deploys a ClickHouse StatefulSet, headless Service, and ConfigMap from `spec.clickhouse.managed` with configurable storage, replicas, resource presets (small/medium/large/custom), and auth secret references
+- **Managed Redis** — deploys a Redis StatefulSet and headless Service from `spec.redis.managed` with configurable storage, `requirepass` auth from generated secrets, and persistence via appendonly
+- **Database migration controller** — watches for version changes and creates Kubernetes Jobs to run Langfuse database migrations, with status tracking, failure handling, and automatic cleanup of completed jobs
+- **Secret generation & rotation** — auto-generates `NEXTAUTH_SECRET`, `SALT`, ClickHouse credentials, and Redis password; detects secret changes via SHA256 hash annotations and triggers rolling restarts
+- **ClickHouse retention controller** — manages TTL policies on ClickHouse tables (traces, observations, scores) based on `spec.clickhouse.retention` with configurable per-table TTL days
+- **Schema drift detection** — periodic ClickHouse schema validation with configurable check intervals and status condition reporting
+- **Circuit breaker** — monitors dependency health (ClickHouse, Redis, PostgreSQL) and scales worker to zero when failure thresholds are breached; auto-restores on recovery
+- **Health monitor** — periodic health checks across all components with status condition updates, phase management (Running/Degraded), and event recording on transitions
+- **Ingress support** — creates a Kubernetes Ingress from `spec.ingress` with IngressClassName, TLS (manual secret or cert-manager auto-provisioning), and custom annotations
+- **OpenShift Route support** — creates an OpenShift Route from `spec.route` with edge TLS termination, optional host, and custom annotations (uses unstructured objects to avoid OpenShift API dependency)
+- **Gateway API support** — creates an HTTPRoute from `spec.gatewayAPI` referencing an existing Gateway, with optional hostname and annotations (uses unstructured objects to avoid Gateway API dependency)
+- **HorizontalPodAutoscaler** — creates HPAs for Web and Worker deployments from `spec.web.autoscaling` / `spec.worker.autoscaling` with min/max replicas and CPU target utilization
+- **PodDisruptionBudget** — creates PDBs for Web and Worker deployments from `spec.web.pdb` / `spec.worker.pdb` with configurable minAvailable
+- **ServiceMonitor** — creates a Prometheus ServiceMonitor from `spec.observability.serviceMonitor` (uses unstructured objects to avoid monitoring.coreos.com API dependency)
+- **Operator Prometheus metrics** — reconcile count, error count, duration histogram, and managed instance gauge registered with controller-runtime metrics
+- **Langfuse Admin API client** — HTTP client with Basic auth for organization, project, member, and API key management via the Langfuse Admin API
+- **LangfuseOrganization controller** — full reconciliation with finalizer, member sync (additive and exclusive modes), role-based access, and deletion protection when dependent projects exist
+- **LangfuseProject controller** — full reconciliation with finalizer, API key sync, Kubernetes Secret creation with publicKey/secretKey/host, and cascading cleanup on deletion
+- **Namespace scoping** — `WATCH_NAMESPACE` env var and `--watch-namespaces` CLI flag to restrict the operator to specific namespaces (comma-separated); defaults to all namespaces. Helm chart exposes `watchNamespaces` value
+- **Kind-based E2E test suite** — full-stack E2E tests running in Kind with PostgreSQL, ClickHouse, Redis, and MinIO dependencies; verifies resource creation, labels, owner references, pod health, Langfuse health endpoint, CR updates, garbage collection, and managed data store lifecycle
+
 ## [0.5.0] - 2026-04-05
 
 ### Added
 
 - **Helm chart** for installing the operator on non-OLM clusters (`deploy/charts/langfuse-operator/`)
 - **Automatic CRD sync** into the Helm chart via `make manifests` / `make sync-helm-crds`
+- **NetworkPolicy support** — creates per-component policies by default (web: ingress on 3000, worker: deny all ingress; both: egress to data stores and DNS). Disable with `spec.security.networkPolicy.enabled: false`
 - **Minikube test manifests** for local end-to-end testing with PostgreSQL, ClickHouse, Redis, and MinIO (`test/minikube/`)
 
 ### Fixed

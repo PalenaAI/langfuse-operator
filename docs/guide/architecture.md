@@ -75,9 +75,16 @@ LangfuseInstance
 ├── Deployment: <name>-worker
 ├── Service: <name>-web
 ├── Secret: <name>-generated-secrets
+├── StatefulSet: <name>-clickhouse (if managed)
+├── Service: <name>-clickhouse (if managed)
+├── ConfigMap: <name>-clickhouse (if managed)
+├── StatefulSet: <name>-redis (if managed)
+├── Service: <name>-redis (if managed)
+├── Job: <name>-migration-<version> (on upgrade)
 ├── Ingress: <name>-web (if enabled)
 ├── HPA: <name>-web (if autoscaling)
 ├── PDB: <name>-web (if enabled)
+├── ServiceMonitor: <name>-web (if enabled)
 └── NetworkPolicy: <name> (if enabled)
 
 LangfuseProject

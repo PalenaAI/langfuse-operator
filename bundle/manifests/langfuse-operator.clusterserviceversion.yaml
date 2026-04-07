@@ -81,15 +81,15 @@ metadata:
       ]
     capabilities: Deep Insights
     categories: AI/Machine Learning, Monitoring
-    containerImage: ghcr.io/palenaai/langfuse-operator:v0.5.0
-    createdAt: "2026-04-06T19:45:34Z"
+    containerImage: ghcr.io/palenaai/langfuse-operator:v0.6.0
+    createdAt: "2026-04-07T12:48:33Z"
     description: Kubernetes operator for deploying and managing production-ready Langfuse
       LLM observability instances.
     operators.operatorframework.io/builder: operator-sdk-v1.42.1
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
     repository: https://github.com/PalenaAI/langfuse-operator
     support: bitkaio LLC
-  name: langfuse-operator.v0.5.0
+  name: langfuse-operator.v0.6.0
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -141,6 +141,7 @@ spec:
         - apiGroups:
           - ""
           resources:
+          - configmaps
           - secrets
           - services
           verbs:
@@ -152,9 +153,49 @@ spec:
           - update
           - watch
         - apiGroups:
+          - ""
+          resources:
+          - events
+          verbs:
+          - create
+          - patch
+        - apiGroups:
+          - ""
+          resources:
+          - persistentvolumeclaims
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
           - apps
           resources:
           - deployments
+          - statefulsets
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - autoscaling
+          resources:
+          - horizontalpodautoscalers
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - batch
+          resources:
+          - jobs
           verbs:
           - create
           - delete
@@ -208,10 +249,34 @@ spec:
           - patch
           - update
         - apiGroups:
+          - monitoring.coreos.com
+          resources:
+          - servicemonitors
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
           - networking.k8s.io
           resources:
           - ingresses
           - networkpolicies
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - policy
+          resources:
+          - poddisruptionbudgets
           verbs:
           - create
           - delete
@@ -273,7 +338,7 @@ spec:
                 - --health-probe-bind-address=:8081
                 command:
                 - /manager
-                image: controller:latest
+                image: ghcr.io/palenaai/langfuse-operator:v0.6.0
                 livenessProbe:
                   httpGet:
                     path: /healthz
@@ -369,4 +434,4 @@ spec:
   provider:
     name: bitkaio LLC
     url: https://palena.ai
-  version: 0.5.0
+  version: 0.6.0

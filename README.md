@@ -45,7 +45,7 @@ The Langfuse Operator manages the full [Langfuse v3](https://langfuse.com) stack
 ```bash
 helm install langfuse-operator deploy/charts/langfuse-operator \
   -n langfuse-operator-system --create-namespace \
-  --set image.tag=0.5.0
+  --set image.tag=0.6.0
 ```
 
 This installs the CRDs, RBAC, and operator deployment. See the [chart values](deploy/charts/langfuse-operator/values.yaml) for all configuration options.

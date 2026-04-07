@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-04-07
+
 ### Added
 
 - **Managed ClickHouse** — deploys a ClickHouse StatefulSet, headless Service, and ConfigMap from `spec.clickhouse.managed` with configurable storage, replicas, resource presets (small/medium/large/custom), and auth secret references
@@ -65,6 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Cloudflare Pages deployment** via `wrangler.toml`
 - `CONTRIBUTING.md` with development setup, conventions, and commit format
 
-[Unreleased]: https://github.com/PalenaAI/langfuse-operator/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/PalenaAI/langfuse-operator/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/PalenaAI/langfuse-operator/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/PalenaAI/langfuse-operator/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/PalenaAI/langfuse-operator/releases/tag/v0.4.0

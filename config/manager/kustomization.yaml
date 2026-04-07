@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: ghcr.io/palenaai/langfuse-operator
-  newTag: e2e-test
+  newTag: v0.6.0

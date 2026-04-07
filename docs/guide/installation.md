@@ -47,7 +47,7 @@ For clusters without OLM:
 helm install langfuse-operator deploy/charts/langfuse-operator \
   --namespace langfuse-operator-system \
   --create-namespace \
-  --set image.tag=0.5.0
+  --set image.tag=0.6.0
 ```
 
 See the [chart values](https://github.com/PalenaAI/langfuse-operator/blob/main/deploy/charts/langfuse-operator/values.yaml) for all configuration options (replicas, resources, tolerations, affinity, etc.).

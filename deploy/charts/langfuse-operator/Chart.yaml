@@ -2,8 +2,8 @@ apiVersion: v2
 name: langfuse-operator
 description: Kubernetes operator for deploying and managing production-ready Langfuse LLM observability instances
 type: application
-version: 0.5.0
-appVersion: "0.5.0"
+version: 0.6.0
+appVersion: "0.6.0"
 kubeVersion: ">= 1.26.0-0"
 home: https://github.com/PalenaAI/langfuse-operator
 sources:

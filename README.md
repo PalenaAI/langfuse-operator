@@ -10,9 +10,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/PalenaAI/langfuse-operator/actions"><img src="https://github.com/PalenaAI/langfuse-operator/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/PalenaAI/langfuse-operator/releases"><img src="https://img.shields.io/github/v/release/PalenaAI/langfuse-operator" alt="Release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/PalenaAI/langfuse-operator" alt="License"></a>
+  <a href="https://github.com/PalenaAI/langfuse-operator/actions/workflows/test.yml"><img src="https://github.com/PalenaAI/langfuse-operator/actions/workflows/test.yml/badge.svg?branch=main" alt="Tests"></a>
+  <a href="https://github.com/PalenaAI/langfuse-operator/actions/workflows/test-e2e.yml"><img src="https://github.com/PalenaAI/langfuse-operator/actions/workflows/test-e2e.yml/badge.svg?branch=main" alt="E2E"></a>
+  <a href="https://github.com/PalenaAI/langfuse-operator/releases"><img src="https://img.shields.io/github/v/release/PalenaAI/langfuse-operator?cacheSeconds=3600" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/PalenaAI/langfuse-operator?cacheSeconds=3600" alt="License"></a>
 </p>
 
 ---

@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Database migration container fails on Langfuse 3.163.0+** — the migration Job hardcoded `node packages/shared/dist/src/db/migrate.cjs`, a path that no longer exists upstream (Langfuse moved Postgres migrations into the image's `entrypoint.sh` via `prisma migrate deploy`). The Job now reuses the image's own ENTRYPOINT and passes `true` as the command, so it picks up whatever migration mechanism the running Langfuse version uses — Postgres and ClickHouse both — and exits cleanly when done. Survives future upstream changes to the migration entrypoint without operator changes.
 - **Prisma advisory-lock deadlock during startup** — because the Langfuse image's entrypoint runs `prisma migrate deploy` on every container start, the dedicated migration Job and the web/worker pods raced for the same Postgres advisory lock and deadlocked. The web and worker Deployments now set `LANGFUSE_AUTO_POSTGRES_MIGRATION_DISABLED=true` and `LANGFUSE_AUTO_CLICKHOUSE_MIGRATION_DISABLED=true`, leaving migrations as the sole responsibility of the migration Job.
 
+### Security
+
+- **Bumped `google.golang.org/grpc` to 1.79.3** to resolve [GHSA-p77j-4mvh-x3m3](https://github.com/advisories/GHSA-p77j-4mvh-x3m3) (critical — gRPC-Go authorization bypass via missing leading slash in `:path`).
+- **Bumped `go.opentelemetry.io/otel/sdk` to 1.43.0** to resolve [GHSA-9h8m-3fm2-qjrq](https://github.com/advisories/GHSA-9h8m-3fm2-qjrq) and [GHSA-hfvc-g4fc-pqhx](https://github.com/advisories/GHSA-hfvc-g4fc-pqhx) (high — PATH hijacking via OpenTelemetry SDK).
+- **Docs site** — overrode `esbuild` to ≥ 0.25.0 and `postcss` to ≥ 8.5.10 to clear two moderate advisories. Vite stays on 5.4.21 (no fix exists for vite 5.x; the remaining advisory is dev-server-only and does not affect the deployed static site).
+
 ## [0.6.0] - 2026-04-07
 
 ### Added

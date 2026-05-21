@@ -32,8 +32,11 @@ const (
 	testNamespace = "langfuse-e2e"
 
 	// Timeouts for different stages.
-	depTimeout      = "3m" // dependencies are lightweight containers
-	langfuseTimeout = "8m" // Langfuse needs DB migrations + ClickHouse init
+	depTimeout = "3m" // dependencies are lightweight containers
+	// Langfuse needs DB migrations + ClickHouse init. Generous on purpose:
+	// on GHA-hosted ubuntu-latest (2 vCPU, 7GB RAM) the full v3 stack can
+	// take 8-12 min cold; 8m was right on the edge and flaked.
+	langfuseTimeout = "15m"
 	cleanupTimeout  = "2m" // garbage collection via owner references
 	resourceTimeout = "3m" // operator creating k8s resources
 	pollingInterval = 2 * time.Second

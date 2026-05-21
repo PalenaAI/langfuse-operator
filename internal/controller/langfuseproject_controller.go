@@ -86,7 +86,7 @@ func (r *LangfuseProjectReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	instance, err := r.resolveInstance(ctx, project)
 	if err != nil {
 		meta.SetStatusCondition(&project.Status.Conditions, metav1.Condition{
-			Type:               "Ready",
+			Type:               conditionTypeReady,
 			Status:             metav1.ConditionFalse,
 			Reason:             "InstanceNotReady",
 			Message:            err.Error(),
@@ -103,7 +103,7 @@ func (r *LangfuseProjectReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	orgID, err := r.resolveOrganization(ctx, project)
 	if err != nil {
 		meta.SetStatusCondition(&project.Status.Conditions, metav1.Condition{
-			Type:               "Ready",
+			Type:               conditionTypeReady,
 			Status:             metav1.ConditionFalse,
 			Reason:             "OrganizationNotReady",
 			Message:            err.Error(),
@@ -121,7 +121,7 @@ func (r *LangfuseProjectReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	lfClient, err := buildLangfuseClient(ctx, r.Client, instance)
 	if err != nil {
 		meta.SetStatusCondition(&project.Status.Conditions, metav1.Condition{
-			Type:               "Ready",
+			Type:               conditionTypeReady,
 			Status:             metav1.ConditionFalse,
 			Reason:             "ClientError",
 			Message:            err.Error(),
@@ -138,7 +138,7 @@ func (r *LangfuseProjectReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	projectID, err := r.syncProject(ctx, lfClient, project, orgID)
 	if err != nil {
 		meta.SetStatusCondition(&project.Status.Conditions, metav1.Condition{
-			Type:               "Ready",
+			Type:               conditionTypeReady,
 			Status:             metav1.ConditionFalse,
 			Reason:             "SyncFailed",
 			Message:            fmt.Sprintf("Failed to sync project: %s", err.Error()),
@@ -156,7 +156,7 @@ func (r *LangfuseProjectReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	apiKeyStatuses, err := r.syncAPIKeys(ctx, lfClient, project, instance)
 	if err != nil {
 		meta.SetStatusCondition(&project.Status.Conditions, metav1.Condition{
-			Type:               "Ready",
+			Type:               conditionTypeReady,
 			Status:             metav1.ConditionFalse,
 			Reason:             "APIKeySyncFailed",
 			Message:            fmt.Sprintf("Failed to sync API keys: %s", err.Error()),
@@ -172,7 +172,7 @@ func (r *LangfuseProjectReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// 9. Set Ready condition.
 	meta.SetStatusCondition(&project.Status.Conditions, metav1.Condition{
-		Type:               "Ready",
+		Type:               conditionTypeReady,
 		Status:             metav1.ConditionTrue,
 		Reason:             "Synced",
 		Message:            "Project is synced with Langfuse",

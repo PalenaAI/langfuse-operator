@@ -26,6 +26,12 @@ linters:
       rules:
         - name: comment-spacings
         - name: import-shadowing
+    goconst:
+      # Skip test files — repeated literals are normal in fixtures and assertions.
+      ignore-tests: true
+      # Only flag strings repeated frequently enough that a const is a real
+      # readability win; lower thresholds produce mostly k8s-label noise.
+      min-occurrences: 8
   exclusions:
     generated: lax
     rules:

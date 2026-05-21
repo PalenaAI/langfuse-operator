@@ -81,7 +81,7 @@ func (r *LangfuseOrganizationReconciler) Reconcile(ctx context.Context, req ctrl
 	instance, err := r.resolveInstance(ctx, org)
 	if err != nil {
 		meta.SetStatusCondition(&org.Status.Conditions, metav1.Condition{
-			Type:               "Ready",
+			Type:               conditionTypeReady,
 			Status:             metav1.ConditionFalse,
 			Reason:             "InstanceNotReady",
 			Message:            err.Error(),
@@ -98,7 +98,7 @@ func (r *LangfuseOrganizationReconciler) Reconcile(ctx context.Context, req ctrl
 	lfClient, err := buildLangfuseClient(ctx, r.Client, instance)
 	if err != nil {
 		meta.SetStatusCondition(&org.Status.Conditions, metav1.Condition{
-			Type:               "Ready",
+			Type:               conditionTypeReady,
 			Status:             metav1.ConditionFalse,
 			Reason:             "ClientError",
 			Message:            err.Error(),
@@ -115,7 +115,7 @@ func (r *LangfuseOrganizationReconciler) Reconcile(ctx context.Context, req ctrl
 	orgID, err := r.syncOrganization(ctx, lfClient, org)
 	if err != nil {
 		meta.SetStatusCondition(&org.Status.Conditions, metav1.Condition{
-			Type:               "Ready",
+			Type:               conditionTypeReady,
 			Status:             metav1.ConditionFalse,
 			Reason:             "SyncFailed",
 			Message:            fmt.Sprintf("Failed to sync organization: %s", err.Error()),
@@ -133,7 +133,7 @@ func (r *LangfuseOrganizationReconciler) Reconcile(ctx context.Context, req ctrl
 	syncedCount, err := r.syncMembers(ctx, lfClient, org)
 	if err != nil {
 		meta.SetStatusCondition(&org.Status.Conditions, metav1.Condition{
-			Type:               "Ready",
+			Type:               conditionTypeReady,
 			Status:             metav1.ConditionFalse,
 			Reason:             "MemberSyncFailed",
 			Message:            fmt.Sprintf("Failed to sync members: %s", err.Error()),
@@ -157,7 +157,7 @@ func (r *LangfuseOrganizationReconciler) Reconcile(ctx context.Context, req ctrl
 
 	// 9. Set Ready condition.
 	meta.SetStatusCondition(&org.Status.Conditions, metav1.Condition{
-		Type:               "Ready",
+		Type:               conditionTypeReady,
 		Status:             metav1.ConditionTrue,
 		Reason:             "Synced",
 		Message:            "Organization is synced with Langfuse",
@@ -193,7 +193,7 @@ func (r *LangfuseOrganizationReconciler) handleDeletion(ctx context.Context, org
 	}
 	if projectCount > 0 {
 		meta.SetStatusCondition(&org.Status.Conditions, metav1.Condition{
-			Type:               "Ready",
+			Type:               conditionTypeReady,
 			Status:             metav1.ConditionFalse,
 			Reason:             "DependentProjectsExist",
 			Message:            fmt.Sprintf("Cannot delete: %d LangfuseProject(s) still reference this organization", projectCount),

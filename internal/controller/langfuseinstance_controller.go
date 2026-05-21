@@ -48,6 +48,10 @@ const (
 	phaseMigrating = "Migrating"
 	phaseDegraded  = "Degraded"
 	phaseError     = "Error"
+
+	// conditionTypeReady is the status condition type set on every CR in
+	// this group; centralising the literal avoids drift across reconcilers.
+	conditionTypeReady = "Ready"
 )
 
 // LangfuseInstanceReconciler reconciles a LangfuseInstance object
@@ -98,7 +102,7 @@ func (r *LangfuseInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	config, err := langfuse.BuildConfig(instance)
 	if err != nil {
 		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
-			Type:               "Ready",
+			Type:               conditionTypeReady,
 			Status:             metav1.ConditionFalse,
 			Reason:             "ConfigError",
 			Message:            err.Error(),
@@ -317,7 +321,7 @@ func (r *LangfuseInstanceReconciler) updateStatus(ctx context.Context, instance 
 	instance.Status.PublicUrl = instance.Spec.Auth.NextAuthUrl
 
 	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
-		Type:               "Ready",
+		Type:               conditionTypeReady,
 		Status:             boolToConditionStatus(instance.Status.Ready),
 		Reason:             phaseToReason(instance.Status.Phase),
 		Message:            fmt.Sprintf("Phase: %s", instance.Status.Phase),

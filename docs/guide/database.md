@@ -1,9 +1,13 @@
 # Database (PostgreSQL)
 
-Langfuse uses PostgreSQL as its primary data store. The operator supports three modes: **CloudNativePG**, **managed**, and **external**.
+Langfuse uses PostgreSQL as its primary data store. The operator supports three modes: **CloudNativePG**, **external**, and **managed**.
 
 ::: tip
-Exactly one of `cloudnativepg`, `managed`, or `external` must be configured.
+Exactly one of `cloudnativepg`, `external`, or `managed` must be configured.
+:::
+
+::: warning Production guidance
+For production workloads use **CloudNativePG** (HA, streaming replication, point-in-time recovery, barman/pgbackrest backups) or an **external** managed Postgres (RDS, Cloud SQL, Aiven, etc.). The operator does not manage HA or backups for any other Postgres deployment.
 :::
 
 ## CloudNativePG
@@ -47,22 +51,10 @@ The optional `directUrl` key is used for operations that need to bypass connecti
 
 ## Managed
 
-The operator can deploy a PostgreSQL instance for you:
+::: danger Not implemented
+Managed Postgres is reserved in the CRD schema but **not implemented** in the current release. Setting `database.managed` will wire `DATABASE_URL` to a Secret the operator does not create — Langfuse will fail to start. Use `cloudnativepg` or `external` instead.
 
-```yaml
-spec:
-  database:
-    managed:
-      instances: 3
-      storageSize: "50Gi"
-      storageClass: gp3-encrypted
-      backup:
-        enabled: true
-        schedule: "0 2 * * *"
-```
-
-::: warning
-Managed mode provisions a basic PostgreSQL StatefulSet. For production workloads, CloudNativePG or an external managed database is recommended.
+The `instances`, `storageSize`, `storageClass`, and `backup` fields are accepted by validation but ignored at reconcile time. They will be honored once managed Postgres ships (no committed timeline).
 :::
 
 ## Migrations

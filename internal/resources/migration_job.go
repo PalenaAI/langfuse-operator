@@ -54,10 +54,14 @@ func BuildMigrationJob(instance *v1alpha1.LangfuseInstance, config *langfuse.Con
 					RestartPolicy: corev1.RestartPolicyNever,
 					Containers: []corev1.Container{
 						{
-							Name:    "langfuse-migrate",
-							Image:   containerImage(instance),
-							Command: []string{"node", "packages/shared/dist/src/db/migrate.cjs"},
-							Env:     config.CommonEnv,
+							// Reuse the image's own ENTRYPOINT (which runs Postgres + ClickHouse
+							// migrations) and pass `true` so the container exits cleanly once
+							// migrations are done. This keeps the operator version-agnostic
+							// across upstream changes to the migration mechanism.
+							Name:  "langfuse-migrate",
+							Image: containerImage(instance),
+							Args:  []string{"true"},
+							Env:   config.CommonEnv,
 						},
 					},
 				},

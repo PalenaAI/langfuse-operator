@@ -18,6 +18,7 @@ package e2e
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"time"
 
@@ -36,7 +37,30 @@ const (
 	cleanupTimeout  = "2m" // garbage collection via owner references
 	resourceTimeout = "3m" // operator creating k8s resources
 	pollingInterval = 2 * time.Second
+
+	// Default Langfuse image tags used in fixtures and assertions. Override
+	// via LANGFUSE_IMAGE_TAG / LANGFUSE_PATCH_TAG to target a different
+	// upstream version (e.g. nightly CI uses "latest").
+	defaultLangfuseImageTag = "3.174.1"
+	defaultLangfusePatchTag = "3.174.0"
 )
+
+// langfuseImageTag is the Langfuse tag applied via the fixture YAMLs.
+func langfuseImageTag() string {
+	if v := os.Getenv("LANGFUSE_IMAGE_TAG"); v != "" {
+		return v
+	}
+	return defaultLangfuseImageTag
+}
+
+// langfusePatchTag is the Langfuse tag the "image change" test patches to.
+// It must differ from langfuseImageTag for the patch to exercise a real change.
+func langfusePatchTag() string {
+	if v := os.Getenv("LANGFUSE_PATCH_TAG"); v != "" {
+		return v
+	}
+	return defaultLangfusePatchTag
+}
 
 // --- helpers (all scoped to testNamespace) -----------------------------------
 
@@ -156,7 +180,10 @@ var _ = Describe("LangfuseInstance", Ordered, func() {
 			Expect(utils.WaitForJobComplete(testNamespace, "minio-create-bucket", depTimeout)).To(Succeed())
 
 			By("applying LangfuseInstance CR with external deps")
-			Expect(utils.KubectlApply(utils.FixtureDir("langfuse-external.yaml"))).To(Succeed())
+			Expect(utils.KubectlApplyTemplated(
+				utils.FixtureDir("langfuse-external.yaml"),
+				map[string]string{"LANGFUSE_IMAGE_TAG": langfuseImageTag()},
+			)).To(Succeed())
 		})
 
 		// ── Resource creation ──────────────────────────────────────────
@@ -258,7 +285,7 @@ var _ = Describe("LangfuseInstance", Ordered, func() {
 		It("should report the correct version in status", func() {
 			version, err := getJSONPath("langfuseinstance", instanceName, "{.status.version}")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(version).To(Equal("3.163.0"))
+			Expect(version).To(Equal(langfuseImageTag()))
 		})
 
 		// ── Health endpoint ────────────────────────────────────────────
@@ -282,16 +309,21 @@ var _ = Describe("LangfuseInstance", Ordered, func() {
 		// ── Update ─────────────────────────────────────────────────────
 
 		It("should update deployments when image tag changes", func() {
+			patchTag := langfusePatchTag()
+			if patchTag == langfuseImageTag() {
+				Skip("LANGFUSE_PATCH_TAG matches LANGFUSE_IMAGE_TAG; patch test needs distinct tags")
+			}
+
 			By("patching the LangfuseInstance image tag")
 			Expect(utils.KubectlPatch("langfuseinstance", instanceName, testNamespace,
-				`{"spec":{"image":{"tag":"3.163.0"}}}`)).To(Succeed())
+				fmt.Sprintf(`{"spec":{"image":{"tag":%q}}}`, patchTag))).To(Succeed())
 
 			By("verifying the web deployment image is updated")
 			Eventually(func(g Gomega) {
 				image, err := getJSONPath("deployment", instanceName+"-web",
 					"{.spec.template.spec.containers[0].image}")
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(image).To(ContainSubstring("3.163.0"))
+				g.Expect(image).To(ContainSubstring(patchTag))
 			}, resourceTimeout, pollingInterval).Should(Succeed())
 
 			By("verifying the worker deployment image is updated")
@@ -299,14 +331,14 @@ var _ = Describe("LangfuseInstance", Ordered, func() {
 				image, err := getJSONPath("deployment", instanceName+"-worker",
 					"{.spec.template.spec.containers[0].image}")
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(image).To(ContainSubstring("3.163.0"))
+				g.Expect(image).To(ContainSubstring(patchTag))
 			}, resourceTimeout, pollingInterval).Should(Succeed())
 
 			By("verifying the status version is updated")
 			Eventually(func(g Gomega) {
 				version, err := getJSONPath("langfuseinstance", instanceName, "{.status.version}")
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(version).To(Equal("3.163.0"))
+				g.Expect(version).To(Equal(patchTag))
 			}, resourceTimeout, pollingInterval).Should(Succeed())
 		})
 
@@ -352,7 +384,10 @@ var _ = Describe("LangfuseInstance", Ordered, func() {
 			Expect(utils.WaitForDeploymentReady(testNamespace, "minio", depTimeout)).To(Succeed())
 
 			By("applying LangfuseInstance CR with managed ClickHouse and Redis")
-			Expect(utils.KubectlApply(utils.FixtureDir("langfuse-managed.yaml"))).To(Succeed())
+			Expect(utils.KubectlApplyTemplated(
+				utils.FixtureDir("langfuse-managed.yaml"),
+				map[string]string{"LANGFUSE_IMAGE_TAG": langfuseImageTag()},
+			)).To(Succeed())
 		})
 
 		AfterAll(func() {

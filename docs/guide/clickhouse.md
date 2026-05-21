@@ -1,6 +1,10 @@
 # ClickHouse
 
-Langfuse uses ClickHouse for high-performance analytics and trace storage. The operator supports **managed** and **external** modes.
+Langfuse uses ClickHouse for high-performance analytics and trace storage. The operator supports **external** and **managed** modes.
+
+::: warning Production guidance
+For production workloads use **external** ClickHouse — either a managed service (ClickHouse Cloud, Altinity.Cloud, Aiven) or a cluster deployed via the [Altinity ClickHouse Operator](https://github.com/Altinity/clickhouse-operator) that you operate yourself. Managed mode in this operator is a **single-node, dev-only** deployment with no replication, no sharding, and no backups.
+:::
 
 ## External
 
@@ -29,18 +33,22 @@ For single-node ClickHouse deployments, the operator automatically sets `CLICKHO
 
 ## Managed
 
-Deploy ClickHouse via the [Altinity ClickHouse Operator](https://github.com/Altinity/clickhouse-operator):
+::: danger Dev / preview only
+Managed mode deploys a **plain single-node ClickHouse StatefulSet**, not a clustered deployment via the Altinity ClickHouse Operator. `CLICKHOUSE_CLUSTER_ENABLED=false` is forced — no ZooKeeper/Keeper, no `ReplicatedMergeTree`, no `ON CLUSTER` DDL. The operator does not take backups or snapshots. Suitable for local development, evaluation, and CI; **not for production**.
+
+The `shards` field is ignored. Setting `replicas > 1` creates N independent pods that do not replicate data — do not use.
+:::
+
+Deploy a single-node ClickHouse for development:
 
 ```yaml
 spec:
   clickhouse:
     managed:
-      shards: 1
-      replicas: 3
       storageSize: "100Gi"
       storageClass: gp3-encrypted
       resources:
-        preset: large              # small | medium | large | custom
+        preset: small              # small | medium | large | custom
       auth:
         secretRef:                 # optional, omit to auto-generate
           name: ch-creds

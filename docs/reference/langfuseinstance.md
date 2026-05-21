@@ -114,17 +114,17 @@ Deploys and manages the complete Langfuse stack: Web, Worker, and all dependent 
 
 | Field | Type | Description |
 |---|---|---|
-| `cloudnativepg` | *CloudNativePGSpec | Reference a CNPG Cluster |
-| `managed` | *ManagedDatabaseSpec | Operator-managed PostgreSQL |
-| `external` | *ExternalDatabaseSpec | External PostgreSQL |
+| `cloudnativepg` | *CloudNativePGSpec | Reference a CNPG Cluster (recommended for production) |
+| `external` | *ExternalDatabaseSpec | External PostgreSQL (recommended for production) |
+| `managed` | *ManagedDatabaseSpec | **Not implemented** — reserved for a future release |
 | `migration` | *MigrationSpec | Migration behavior |
 
 ### ClickHouseSpec
 
 | Field | Type | Description |
 |---|---|---|
-| `managed` | *ManagedClickHouseSpec | Managed via ClickHouse Operator |
-| `external` | *ExternalClickHouseSpec | External ClickHouse |
+| `external` | *ExternalClickHouseSpec | External ClickHouse (recommended for production) |
+| `managed` | *ManagedClickHouseSpec | Single-node StatefulSet (dev / preview only — no replication, no backups) |
 | `encryption` | *ClickHouseEncryptionSpec | Encryption settings |
 | `retention` | *RetentionSpec | Data retention policies |
 | `schemaDrift` | *SchemaDriftSpec | Schema drift detection |
@@ -133,8 +133,8 @@ Deploys and manages the complete Langfuse stack: Web, Worker, and all dependent 
 
 | Field | Type | Description |
 |---|---|---|
-| `managed` | *ManagedRedisSpec | Operator-managed Redis |
-| `external` | *ExternalRedisSpec | External Redis |
+| `external` | *ExternalRedisSpec | External Redis (recommended for production) |
+| `managed` | *ManagedRedisSpec | Single-pod StatefulSet (dev / preview only — no HA, no backups) |
 
 ### BlobStorageSpec
 

@@ -169,6 +169,24 @@ func KubectlApply(file string) error {
 	return err
 }
 
+// KubectlApplyTemplated reads a YAML file, substitutes "__KEY__" placeholders
+// with the supplied values, and pipes the result into `kubectl apply -f -`.
+// The file on disk is not modified.
+func KubectlApplyTemplated(file string, replacements map[string]string) error {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", file, err)
+	}
+	rendered := string(data)
+	for k, v := range replacements {
+		rendered = strings.ReplaceAll(rendered, "__"+k+"__", v)
+	}
+	cmd := exec.Command("kubectl", "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(rendered)
+	_, err = Run(cmd)
+	return err
+}
+
 // KubectlDelete deletes resources defined in a YAML file.
 func KubectlDelete(file string) error {
 	cmd := exec.Command("kubectl", "delete", "--ignore-not-found", "-f", file)

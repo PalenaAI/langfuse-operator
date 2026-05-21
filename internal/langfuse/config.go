@@ -81,6 +81,11 @@ func BuildConfig(instance *v1alpha1.LangfuseInstance) (*Config, error) {
 	cfg.WebEnv = append(cfg.WebEnv, envVar("LANGFUSE_WORKER_ENABLED", "false"))
 	cfg.WebEnv = append(cfg.WebEnv, envVar("PORT", "3000"))
 	cfg.WebEnv = append(cfg.WebEnv, envVar("HOSTNAME", "0.0.0.0"))
+	// Migrations are owned by the dedicated migration Job; disable them in the
+	// web/worker entrypoints to avoid Prisma advisory-lock deadlocks when
+	// multiple pods start in parallel.
+	cfg.WebEnv = append(cfg.WebEnv, envVar("LANGFUSE_AUTO_POSTGRES_MIGRATION_DISABLED", "true"))
+	cfg.WebEnv = append(cfg.WebEnv, envVar("LANGFUSE_AUTO_CLICKHOUSE_MIGRATION_DISABLED", "true"))
 
 	// ─── Worker-specific ──────────────────────────────────────
 	cfg.WorkerEnv = append(cfg.WorkerEnv, envVar("LANGFUSE_WORKER_ENABLED", "true"))
@@ -89,6 +94,8 @@ func BuildConfig(instance *v1alpha1.LangfuseInstance) (*Config, error) {
 		concurrency = *instance.Spec.Worker.Concurrency
 	}
 	cfg.WorkerEnv = append(cfg.WorkerEnv, envVar("LANGFUSE_WORKER_CONCURRENCY", strconv.Itoa(int(concurrency))))
+	cfg.WorkerEnv = append(cfg.WorkerEnv, envVar("LANGFUSE_AUTO_POSTGRES_MIGRATION_DISABLED", "true"))
+	cfg.WorkerEnv = append(cfg.WorkerEnv, envVar("LANGFUSE_AUTO_CLICKHOUSE_MIGRATION_DISABLED", "true"))
 
 	return cfg, nil
 }

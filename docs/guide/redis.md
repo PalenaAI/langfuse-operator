@@ -2,6 +2,10 @@
 
 Langfuse uses Redis (or Valkey) for caching and as a job queue for the Worker component.
 
+::: warning Production guidance
+For production workloads use **external** Redis — a managed service (ElastiCache, Memorystore, Aiven, Upstash, Redis Enterprise) or a cluster deployed via a dedicated Redis operator (e.g. spotahome/redis-operator, OT-CONTAINER-KIT/redis-operator). Managed mode in this operator is **single-instance, dev-only** with no Sentinel, no Cluster, and no backups.
+:::
+
 ## External
 
 Connect to an existing Redis instance:
@@ -21,13 +25,18 @@ spec:
 
 ## Managed
 
-Deploy a Redis instance managed by the operator:
+::: danger Dev / preview only
+Managed Redis is a **single-pod StatefulSet** (`replicas: 1`, hardcoded) with AOF persistence on a PVC. No Sentinel, no Cluster, no replication, no backups. On node failure the pod must reschedule and remount its volume before Langfuse can resume. Suitable for local development and CI; **not for production**.
+
+The `replicas` field on `redis.managed` is currently ignored.
+:::
+
+Deploy a single-pod Redis for development:
 
 ```yaml
 spec:
   redis:
     managed:
-      replicas: 3
       storageSize: "10Gi"
 ```
 

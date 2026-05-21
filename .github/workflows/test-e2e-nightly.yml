@@ -1,0 +1,49 @@
+name: E2E Tests (Langfuse latest)
+
+# Runs the full E2E suite against the floating `langfuse/langfuse:latest`
+# tag to surface upstream regressions early. Failures here do NOT block PRs
+# — the PR-blocking E2E workflow (test-e2e.yml) pins a known-good version.
+#
+# Bump the pinned tag in test/e2e/fixtures/langfuse-*.yaml when this job
+# catches a real upstream change that the operator needs to absorb.
+
+on:
+  schedule:
+    # 04:17 UTC every day — off-peak, avoids the top-of-hour rush.
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+jobs:
+  test-e2e-latest:
+    name: Run against langfuse:latest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install the latest version of kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      - name: Verify kind installation
+        run: kind version
+
+      - name: Running Test e2e (langfuse:latest)
+        env:
+          # The fixture image tag the operator should deploy. `latest` makes
+          # the run track every new upstream Langfuse release.
+          LANGFUSE_IMAGE_TAG: latest
+          # Patch target for the "image tag changes" test. Equal to
+          # LANGFUSE_IMAGE_TAG → the test self-skips (can't patch `latest`
+          # to a different `latest`).
+          LANGFUSE_PATCH_TAG: latest
+        run: |
+          go mod tidy
+          make test-e2e

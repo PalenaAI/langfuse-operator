@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-05-21
+
+### Fixed
+
+- **Database migration container fails on Langfuse 3.163.0+** — the migration Job hardcoded `node packages/shared/dist/src/db/migrate.cjs`, a path that no longer exists upstream (Langfuse moved Postgres migrations into the image's `entrypoint.sh` via `prisma migrate deploy`). The Job now reuses the image's own ENTRYPOINT and passes `true` as the command, so it picks up whatever migration mechanism the running Langfuse version uses — Postgres and ClickHouse both — and exits cleanly when done. Survives future upstream changes to the migration entrypoint without operator changes.
+- **Prisma advisory-lock deadlock during startup** — because the Langfuse image's entrypoint runs `prisma migrate deploy` on every container start, the dedicated migration Job and the web/worker pods raced for the same Postgres advisory lock and deadlocked. The web and worker Deployments now set `LANGFUSE_AUTO_POSTGRES_MIGRATION_DISABLED=true` and `LANGFUSE_AUTO_CLICKHOUSE_MIGRATION_DISABLED=true`, leaving migrations as the sole responsibility of the migration Job.
+
 ## [0.6.0] - 2026-04-07
 
 ### Added

@@ -26,7 +26,7 @@ metadata:
   namespace: langfuse-e2e
 spec:
   image:
-    tag: "3.163.0"
+    tag: "__LANGFUSE_IMAGE_TAG__"
   auth:
     nextAuthUrl: "http://localhost:3000"
     nextAuthSecret:

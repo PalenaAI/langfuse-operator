@@ -34,7 +34,7 @@ Common labels.
 {{- define "langfuse-operator.labels" -}}
 helm.sh/chart: {{ include "langfuse-operator.chart" . }}
 {{ include "langfuse-operator.selectorLabels" . }}
-app.kubernetes.io/version: {{ .Values.image.tag | default .Chart.AppVersion | quote }}
+app.kubernetes.io/version: {{ .Values.image.tag | default (printf "v%s" .Chart.AppVersion) | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
@@ -60,7 +60,12 @@ Create the name of the service account to use.
 
 {{/*
 Manager container image.
+Default tag is `v<Chart.appVersion>` to match the release workflow, which
+publishes images as `vX.Y.Z`. If the user sets `image.tag` explicitly it is
+used verbatim (so `--set image.tag=v0.6.3` and `--set image.tag=latest` both
+work).
 */}}
 {{- define "langfuse-operator.image" -}}
-{{- printf "%s:%s" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion) }}
+{{- $tag := .Values.image.tag | default (printf "v%s" .Chart.AppVersion) -}}
+{{- printf "%s:%s" .Values.image.repository $tag }}
 {{- end }}

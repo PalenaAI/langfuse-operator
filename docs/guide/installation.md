@@ -46,9 +46,10 @@ For clusters without OLM:
 ```bash
 helm install langfuse-operator deploy/charts/langfuse-operator \
   --namespace langfuse-operator-system \
-  --create-namespace \
-  --set image.tag=0.6.2
+  --create-namespace
 ```
+
+The chart defaults to the image tag matching its `appVersion` (e.g. `v0.6.3`). To pin an older release, pass `--set image.tag=v0.6.2`.
 
 See the [chart values](https://github.com/PalenaAI/langfuse-operator/blob/main/deploy/charts/langfuse-operator/values.yaml) for all configuration options (replicas, resources, tolerations, affinity, etc.).
 

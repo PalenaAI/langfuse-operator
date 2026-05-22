@@ -7,10 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-05-22
+
 ### Fixed
 
-- **`kubectl delete langfuseinstance` no longer hangs forever.** Six controllers (instance, secret, migration, retention, schema-drift, circuit-breaker, health-monitor) kept reconciling after the CR was marked for deletion, re-creating the very Deployments that the foreground-deletion GC was trying to remove. Every reconciler now exits early when `metadata.deletionTimestamp` is set, so owner-reference GC can complete and the finalizer drops cleanly.
+- **`kubectl delete langfuseinstance` no longer hangs forever.** Seven controllers (instance, secret, migration, retention, schema-drift, circuit-breaker, health-monitor) kept reconciling after the CR was marked for deletion, re-creating the very Deployments that the foreground-deletion GC was trying to remove. Every reconciler now exits early when `metadata.deletionTimestamp` is set, so owner-reference GC can complete and the CR is removed cleanly.
 - **Web and worker pods no longer churn (constant ReplicaSet creation).** The instance controller and the secret controller fought over the Deployment's pod-template annotations: the instance controller wrote a Deployment with no `langfuse.palena.ai/secret-hash` annotation, the secret controller patched it back on, the next instance reconcile stripped it again — each flip created a fresh ReplicaSet and terminated the running pods. The instance controller's `reconcileDeployment` now preserves any pod-template annotation under the `langfuse.palena.ai/` namespace from the live Deployment.
+- **Helm chart default image tag is now `vX.Y.Z` instead of `X.Y.Z`.** The release workflow has always published images as `vX.Y.Z`, but the chart's helper resolved `.Chart.AppVersion` (no `v`) and produced an unpullable tag, so `helm install` without an explicit `image.tag` 404'd at pull time. The chart's `langfuse-operator.image` helper now defaults to `v<Chart.AppVersion>` (and `app.kubernetes.io/version` follows the same convention); explicit overrides like `--set image.tag=v0.6.2` or `--set image.tag=latest` continue to work verbatim.
 
 ## [0.6.2] - 2026-05-22
 

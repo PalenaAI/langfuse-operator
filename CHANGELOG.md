@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Health monitor probes are now real.** Previously the four backing-service health checks (`DatabaseReady`, `ClickHouseReady`, `RedisReady`, `BlobStorageReady`) were stubs that always returned `NotConnected`, forcing `status.phase` to `Degraded` even when the install was healthy. The operator now performs actual network probes on a 30 s cadence:
+  - **PostgreSQL** — TCP dial to the resolved endpoint (CNPG `-rw` service, managed-mode generated secret URL, or external `secretRef`).
+  - **ClickHouse** — HTTP GET `/ping` against the managed service URL or external `secretRef` URL.
+  - **Redis** — TCP dial + RESP `PING` against the resolved endpoint; accepts `+PONG` *or* `-NOAUTH` as proof the listener is healthy.
+  - **Blob storage** — TCP dial against the S3 endpoint (MinIO style or `s3.<region>.amazonaws.com:443`), Azure Blob (`<account>.blob.core.windows.net:443`), or GCS (`storage.googleapis.com:443`). Auth is intentionally *not* tested — port reachability separates "operator can't reach the service" from "auth misconfiguration" (which surfaces in the Langfuse pod logs instead). Each probe has a 3 s timeout.
+
 ## [0.6.1] - 2026-05-21
 
 ### Fixed

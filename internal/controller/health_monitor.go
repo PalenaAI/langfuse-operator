@@ -122,87 +122,43 @@ func (r *HealthMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return ctrl.Result{RequeueAfter: healthCheckInterval}, nil
 }
 
-// checkDatabase evaluates PostgreSQL health from the existing status.
+// checkDatabase runs a TCP probe against the resolved Postgres endpoint and
+// mirrors the result into instance.Status.Database for other controllers.
 func (r *HealthMonitorReconciler) checkDatabase(ctx context.Context, instance *v1alpha1.LangfuseInstance) metav1.Condition {
-	log := logf.FromContext(ctx)
-
-	if instance.Status.Database != nil && instance.Status.Database.Connected {
-		return metav1.Condition{
-			Type:               conditionDatabaseReady,
-			Status:             metav1.ConditionTrue,
-			Reason:             "Connected",
-			Message:            "PostgreSQL database is connected",
-			ObservedGeneration: instance.Generation,
-		}
+	res := probeDatabase(ctx, r.Client, instance)
+	if instance.Status.Database == nil {
+		instance.Status.Database = &v1alpha1.DatabaseStatus{}
 	}
-
-	// TODO: implement real TCP/HTTP probe to PostgreSQL
-	log.V(1).Info("database health check: status not set or not connected, would probe PostgreSQL endpoint")
-
-	return metav1.Condition{
-		Type:               conditionDatabaseReady,
-		Status:             metav1.ConditionFalse,
-		Reason:             "NotConnected",
-		Message:            "PostgreSQL database status is not available or not connected",
-		ObservedGeneration: instance.Generation,
-	}
+	instance.Status.Database.Connected = res.Connected
+	return conditionFromProbe(conditionDatabaseReady, res, instance.Generation)
 }
 
-// checkClickHouse evaluates ClickHouse health from the existing status.
+// checkClickHouse issues a /ping HTTP request against the resolved ClickHouse
+// URL and mirrors the result into instance.Status.ClickHouse.
 func (r *HealthMonitorReconciler) checkClickHouse(ctx context.Context, instance *v1alpha1.LangfuseInstance) metav1.Condition {
-	log := logf.FromContext(ctx)
-
-	if instance.Status.ClickHouse != nil && instance.Status.ClickHouse.Connected {
-		return metav1.Condition{
-			Type:               conditionClickHouseReady,
-			Status:             metav1.ConditionTrue,
-			Reason:             "Connected",
-			Message:            "ClickHouse is connected",
-			ObservedGeneration: instance.Generation,
-		}
+	res := probeClickHouse(ctx, r.Client, instance)
+	if instance.Status.ClickHouse == nil {
+		instance.Status.ClickHouse = &v1alpha1.ClickHouseStatus{}
 	}
-
-	log.V(1).Info("clickhouse health check: status not set or not connected, would probe ClickHouse endpoint")
-
-	return metav1.Condition{
-		Type:               conditionClickHouseReady,
-		Status:             metav1.ConditionFalse,
-		Reason:             "NotConnected",
-		Message:            "ClickHouse status is not available or not connected",
-		ObservedGeneration: instance.Generation,
-	}
+	instance.Status.ClickHouse.Connected = res.Connected
+	return conditionFromProbe(conditionClickHouseReady, res, instance.Generation)
 }
 
-// checkRedis evaluates Redis health from the existing status.
+// checkRedis runs a TCP+PING probe against the resolved Redis endpoint and
+// mirrors the result into instance.Status.Redis.
 func (r *HealthMonitorReconciler) checkRedis(ctx context.Context, instance *v1alpha1.LangfuseInstance) metav1.Condition {
-	log := logf.FromContext(ctx)
-
-	if instance.Status.Redis != nil && instance.Status.Redis.Connected {
-		return metav1.Condition{
-			Type:               conditionRedisReady,
-			Status:             metav1.ConditionTrue,
-			Reason:             "Connected",
-			Message:            "Redis is connected",
-			ObservedGeneration: instance.Generation,
-		}
+	res := probeRedis(ctx, r.Client, instance)
+	if instance.Status.Redis == nil {
+		instance.Status.Redis = &v1alpha1.ConnectionStatus{}
 	}
-
-	log.V(1).Info("redis health check: status not set or not connected, would probe Redis endpoint")
-
-	return metav1.Condition{
-		Type:               conditionRedisReady,
-		Status:             metav1.ConditionFalse,
-		Reason:             "NotConnected",
-		Message:            "Redis status is not available or not connected",
-		ObservedGeneration: instance.Generation,
-	}
+	instance.Status.Redis.Connected = res.Connected
+	return conditionFromProbe(conditionRedisReady, res, instance.Generation)
 }
 
-// checkBlobStorage evaluates blob storage health from the existing status.
+// checkBlobStorage runs a TCP probe against the resolved blob-storage endpoint.
+// When blob storage is not configured the condition reports True with reason
+// NotConfigured (treating it as healthy-by-default).
 func (r *HealthMonitorReconciler) checkBlobStorage(ctx context.Context, instance *v1alpha1.LangfuseInstance) metav1.Condition {
-	log := logf.FromContext(ctx)
-
-	// If blob storage is not configured, treat it as healthy (it's optional).
 	if instance.Spec.BlobStorage == nil {
 		return metav1.Condition{
 			Type:               conditionBlobStorageReady,
@@ -212,25 +168,27 @@ func (r *HealthMonitorReconciler) checkBlobStorage(ctx context.Context, instance
 			ObservedGeneration: instance.Generation,
 		}
 	}
-
-	if instance.Status.BlobStorage != nil && instance.Status.BlobStorage.Connected {
-		return metav1.Condition{
-			Type:               conditionBlobStorageReady,
-			Status:             metav1.ConditionTrue,
-			Reason:             "Connected",
-			Message:            fmt.Sprintf("Blob storage is connected (provider: %s)", instance.Status.BlobStorage.Provider),
-			ObservedGeneration: instance.Generation,
-		}
+	res := probeBlobStorage(ctx, r.Client, instance)
+	if instance.Status.BlobStorage == nil {
+		instance.Status.BlobStorage = &v1alpha1.BlobStorageStatus{}
 	}
+	instance.Status.BlobStorage.Connected = res.Connected
+	instance.Status.BlobStorage.Provider = instance.Spec.BlobStorage.Provider
+	return conditionFromProbe(conditionBlobStorageReady, res, instance.Generation)
+}
 
-	log.V(1).Info("blob storage health check: status not set or not connected, would probe blob storage endpoint")
-
+// conditionFromProbe converts a probeResult into a metav1.Condition.
+func conditionFromProbe(conditionType string, res probeResult, gen int64) metav1.Condition {
+	status := metav1.ConditionFalse
+	if res.Connected {
+		status = metav1.ConditionTrue
+	}
 	return metav1.Condition{
-		Type:               conditionBlobStorageReady,
-		Status:             metav1.ConditionFalse,
-		Reason:             "NotConnected",
-		Message:            "Blob storage status is not available or not connected",
-		ObservedGeneration: instance.Generation,
+		Type:               conditionType,
+		Status:             status,
+		Reason:             res.Reason,
+		Message:            res.Message,
+		ObservedGeneration: gen,
 	}
 }
 

@@ -71,6 +71,13 @@ func (r *HealthMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("fetching LangfuseInstance: %w", err)
 	}
 
+	// Stop probing once the CR is being deleted — the GC is in the process of
+	// tearing down the very deployments we'd query, and continued status
+	// writes can fight the foregroundDeletion finalizer.
+	if !instance.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
+	}
+
 	// 2. Skip health checks if instance is not in Running or Degraded phase.
 	if instance.Status.Phase != phaseRunning && instance.Status.Phase != phaseDegraded {
 		log.V(1).Info("skipping health check, instance not in Running or Degraded phase",

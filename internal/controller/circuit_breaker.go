@@ -75,6 +75,14 @@ func (r *CircuitBreakerController) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, fmt.Errorf("fetching LangfuseInstance: %w", err)
 	}
 
+	// Stop reconciling once the instance is being deleted; GC handles teardown.
+	if !instance.DeletionTimestamp.IsZero() {
+		instanceKey := req.String()
+		delete(r.failureCounts, instanceKey)
+		delete(r.savedReplicas, instanceKey)
+		return ctrl.Result{}, nil
+	}
+
 	// 2. If circuit breaker is disabled, return
 	if instance.Spec.CircuitBreaker == nil {
 		return ctrl.Result{}, nil

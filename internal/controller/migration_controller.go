@@ -57,6 +57,12 @@ func (r *MigrationController) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// Don't kick off new migration Jobs while the CR is being deleted —
+	// the Job's owner reference is the LangfuseInstance, which GC is removing.
+	if !instance.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
+	}
+
 	// Skip if migration is disabled
 	if instance.Spec.Database != nil && instance.Spec.Database.Migration != nil &&
 		instance.Spec.Database.Migration.RunOnDeploy != nil && !*instance.Spec.Database.Migration.RunOnDeploy {

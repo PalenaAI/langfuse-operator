@@ -56,6 +56,10 @@ func (r *SchemaDriftController) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, fmt.Errorf("fetching LangfuseInstance: %w", err)
 	}
 
+	if !instance.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
+	}
+
 	// 2. Determine check interval
 	checkInterval := defaultSchemaDriftCheckIntervalMinutes
 	if instance.Spec.ClickHouse != nil &&

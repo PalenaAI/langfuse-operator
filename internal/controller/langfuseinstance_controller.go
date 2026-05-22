@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
@@ -88,6 +89,15 @@ func (r *LangfuseInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("fetching LangfuseInstance: %w", err)
+	}
+
+	// If the instance is being deleted, stop reconciling. Owner references
+	// drive garbage collection of every child resource. Continuing to
+	// reconcile would re-create Deployments that the GC is trying to delete,
+	// fighting `foregroundDeletion` until the CR is wedged.
+	if !instance.DeletionTimestamp.IsZero() {
+		log.Info("instance is being deleted, skipping reconcile")
+		return ctrl.Result{}, nil
 	}
 
 	// 2. Set initial phase
@@ -240,6 +250,13 @@ func (r *LangfuseInstanceReconciler) reconcileDeployment(ctx context.Context, in
 		return fmt.Errorf("getting deployment: %w", err)
 	}
 
+	// Other controllers (secret_controller in particular) patch
+	// `langfuse.palena.ai/*` annotations onto the pod template to drive
+	// rolling restarts. Carry those forward so the DeepEqual comparison
+	// stays stable; otherwise the two controllers fight every reconcile and
+	// spawn a fresh ReplicaSet on each flip.
+	preservePodTemplateAnnotations(existing, desired)
+
 	// Update if spec changed
 	if !equality.Semantic.DeepEqual(existing.Spec, desired.Spec) {
 		existing.Spec = desired.Spec
@@ -248,6 +265,27 @@ func (r *LangfuseInstanceReconciler) reconcileDeployment(ctx context.Context, in
 	}
 
 	return nil
+}
+
+// preservePodTemplateAnnotations copies operator-namespaced pod-template
+// annotations from the live Deployment onto the desired one, so that
+// annotations written by sibling controllers survive subsequent reconciles.
+func preservePodTemplateAnnotations(existing, desired *appsv1.Deployment) {
+	if existing.Spec.Template.Annotations == nil {
+		return
+	}
+	if desired.Spec.Template.Annotations == nil {
+		desired.Spec.Template.Annotations = map[string]string{}
+	}
+	for k, v := range existing.Spec.Template.Annotations {
+		if !strings.HasPrefix(k, "langfuse.palena.ai/") {
+			continue
+		}
+		if _, alreadySet := desired.Spec.Template.Annotations[k]; alreadySet {
+			continue
+		}
+		desired.Spec.Template.Annotations[k] = v
+	}
 }
 
 func (r *LangfuseInstanceReconciler) reconcileService(ctx context.Context, instance *v1alpha1.LangfuseInstance, desired *corev1.Service) error {

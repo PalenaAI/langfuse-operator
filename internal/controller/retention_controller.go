@@ -69,6 +69,10 @@ func (r *RetentionController) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, fmt.Errorf("fetching LangfuseInstance: %w", err)
 	}
 
+	if !instance.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
+	}
+
 	// 2. If ClickHouse retention is not configured, skip
 	if instance.Spec.ClickHouse == nil || instance.Spec.ClickHouse.Retention == nil {
 		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{

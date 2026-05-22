@@ -70,6 +70,12 @@ func (r *SecretController) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, fmt.Errorf("fetching LangfuseInstance: %w", err)
 	}
 
+	// The secret controller patches the Deployment's pod template — if the
+	// CR is being deleted, those patches fight GC and resurrect the workload.
+	if !instance.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
+	}
+
 	// 2. Auto-generate secrets if enabled (default true)
 	if autoGenerateEnabled(instance) {
 		secretName := instance.Name + generatedSecretSuffix

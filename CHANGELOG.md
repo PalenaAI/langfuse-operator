@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`kubectl delete langfuseinstance` no longer hangs forever.** Six controllers (instance, secret, migration, retention, schema-drift, circuit-breaker, health-monitor) kept reconciling after the CR was marked for deletion, re-creating the very Deployments that the foreground-deletion GC was trying to remove. Every reconciler now exits early when `metadata.deletionTimestamp` is set, so owner-reference GC can complete and the finalizer drops cleanly.
+- **Web and worker pods no longer churn (constant ReplicaSet creation).** The instance controller and the secret controller fought over the Deployment's pod-template annotations: the instance controller wrote a Deployment with no `langfuse.palena.ai/secret-hash` annotation, the secret controller patched it back on, the next instance reconcile stripped it again — each flip created a fresh ReplicaSet and terminated the running pods. The instance controller's `reconcileDeployment` now preserves any pod-template annotation under the `langfuse.palena.ai/` namespace from the live Deployment.
+
 ## [0.6.2] - 2026-05-22
 
 ### Fixed

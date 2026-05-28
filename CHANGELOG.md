@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-05-28
+
+### Fixed
+
+- **Migration Job no longer fails when Postgres isn't ready yet.** The Job ran `prisma migrate deploy` immediately; against managed/CNPG Postgres (which take time to start accepting connections) it failed fast and exhausted its backoff limit before the database was up, leaving the Job permanently failed. A `wait-for-stores` init container now blocks until PostgreSQL **and** ClickHouse accept TCP connections (host/port parsed from `DATABASE_URL` / `CLICKHOUSE_URL`) before the migration container runs, with a 5-minute ceiling per store.
+
 ## [0.6.3] - 2026-05-22
 
 ### Fixed

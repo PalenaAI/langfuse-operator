@@ -309,6 +309,87 @@ var _ = Describe("LangfuseInstance", Ordered, func() {
 			}, langfuseTimeout, pollingInterval).Should(Succeed())
 		})
 
+		// ── Multi-tenancy (Organization + Project) ─────────────────────
+		//
+		// The Langfuse organization-management admin API is an Enterprise/Pro
+		// self-hosted feature gated behind LANGFUSE_EE_LICENSE_KEY. Against the
+		// OSS image it returns 403, so these specs only run when a license key
+		// is available to the suite. The client contract is covered by unit
+		// tests regardless (internal/langfuse/client_test.go).
+
+		It("should reconcile a LangfuseOrganization to Ready", func() {
+			if os.Getenv("LANGFUSE_EE_LICENSE_KEY") == "" {
+				Skip("LANGFUSE_EE_LICENSE_KEY not set; org-management API is EE-gated (OSS returns 403)")
+			}
+			By("applying the LangfuseOrganization CR")
+			Expect(utils.KubectlApply(utils.FixtureDir("langfuse-org.yaml"))).To(Succeed())
+
+			By("waiting for the organization to report a Langfuse organization ID")
+			Eventually(func(g Gomega) {
+				orgID, err := getJSONPath("langfuseorganization", "e2e-org", "{.status.organizationId}")
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(orgID).NotTo(BeEmpty())
+				ready, err := getJSONPath("langfuseorganization", "e2e-org", `{.status.conditions[?(@.type=="Ready")].status}`)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(ready).To(Equal("True"))
+			}, langfuseTimeout, pollingInterval).Should(Succeed())
+		})
+
+		It("should reconcile a LangfuseProject and create its API key Secret", func() {
+			if os.Getenv("LANGFUSE_EE_LICENSE_KEY") == "" {
+				Skip("LANGFUSE_EE_LICENSE_KEY not set; project API is EE-gated (OSS returns 403)")
+			}
+			By("applying the LangfuseProject CR")
+			Expect(utils.KubectlApply(utils.FixtureDir("langfuse-project.yaml"))).To(Succeed())
+
+			By("waiting for the project to report a Langfuse project ID and Ready status")
+			Eventually(func(g Gomega) {
+				projID, err := getJSONPath("langfuseproject", "e2e-project", "{.status.projectId}")
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(projID).NotTo(BeEmpty())
+				ready, err := getJSONPath("langfuseproject", "e2e-project", `{.status.conditions[?(@.type=="Ready")].status}`)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(ready).To(Equal("True"))
+			}, langfuseTimeout, pollingInterval).Should(Succeed())
+
+			By("verifying the API key Secret was created with publicKey/secretKey")
+			Eventually(func(g Gomega) {
+				g.Expect(resourceExists("secret", "e2e-project-keys")).To(BeTrue())
+				pk, err := getJSONPath("secret", "e2e-project-keys", "{.data.publicKey}")
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(pk).NotTo(BeEmpty())
+				sk, err := getJSONPath("secret", "e2e-project-keys", "{.data.secretKey}")
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(sk).NotTo(BeEmpty())
+			}, resourceTimeout, pollingInterval).Should(Succeed())
+		})
+
+		It("should cache the organization-scoped API key in an owned Secret", func() {
+			if os.Getenv("LANGFUSE_EE_LICENSE_KEY") == "" {
+				Skip("LANGFUSE_EE_LICENSE_KEY not set; org-management API is EE-gated (OSS returns 403)")
+			}
+			Eventually(func(g Gomega) {
+				g.Expect(resourceExists("secret", "e2e-org-orgkey")).To(BeTrue())
+			}, resourceTimeout, pollingInterval).Should(Succeed())
+		})
+
+		It("should delete the LangfuseProject and LangfuseOrganization cleanly", func() {
+			if os.Getenv("LANGFUSE_EE_LICENSE_KEY") == "" {
+				Skip("LANGFUSE_EE_LICENSE_KEY not set; org/project CRs were not created on OSS")
+			}
+			By("deleting the project (finalizer must clear)")
+			cmd := exec.Command("kubectl", "delete", "langfuseproject", "e2e-project",
+				"-n", testNamespace, "--timeout=60s")
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("deleting the organization (finalizer must clear)")
+			cmd = exec.Command("kubectl", "delete", "langfuseorganization", "e2e-org",
+				"-n", testNamespace, "--timeout=60s")
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
 		// ── Update ─────────────────────────────────────────────────────
 
 		It("should update deployments when image tag changes", func() {

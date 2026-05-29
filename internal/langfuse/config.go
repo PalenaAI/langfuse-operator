@@ -125,6 +125,27 @@ func addAuthEnv(cfg *Config, instance *v1alpha1.LangfuseInstance) {
 			generatedSecretName(instance), "salt"))
 	}
 
+	// ADMIN_API_KEY — used by the operator's organization/project controllers
+	// to call the Langfuse organization-management API. Injected into the
+	// Langfuse containers so the server accepts the operator's Bearer token.
+	if instance.Spec.Auth.AdminApiKey != nil && instance.Spec.Auth.AdminApiKey.SecretRef != nil {
+		cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("ADMIN_API_KEY",
+			instance.Spec.Auth.AdminApiKey.SecretRef.Name,
+			instance.Spec.Auth.AdminApiKey.SecretRef.Key))
+	} else {
+		cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("ADMIN_API_KEY",
+			generatedSecretName(instance), "admin-api-key"))
+	}
+
+	// LANGFUSE_EE_LICENSE_KEY — unlocks the organization-management admin API
+	// (an Enterprise/Pro self-hosted feature). Only injected when provided;
+	// it cannot be auto-generated. Without it, Org/Project CRDs are inert.
+	if instance.Spec.EELicenseKey != nil && instance.Spec.EELicenseKey.SecretRef != nil {
+		cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("LANGFUSE_EE_LICENSE_KEY",
+			instance.Spec.EELicenseKey.SecretRef.Name,
+			instance.Spec.EELicenseKey.SecretRef.Key))
+	}
+
 	// Email/password auth
 	if instance.Spec.Auth.EmailPassword != nil {
 		if instance.Spec.Auth.EmailPassword.Enabled != nil && !*instance.Spec.Auth.EmailPassword.Enabled {

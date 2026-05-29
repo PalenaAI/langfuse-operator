@@ -34,6 +34,7 @@ import (
 
 	v1alpha1 "github.com/PalenaAI/langfuse-operator/api/v1alpha1"
 	"github.com/PalenaAI/langfuse-operator/internal/langfuse"
+	"github.com/PalenaAI/langfuse-operator/internal/resources"
 )
 
 const (
@@ -100,7 +101,7 @@ func (r *LangfuseProjectReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// 5. Resolve the parent LangfuseOrganization.
-	orgID, err := r.resolveOrganization(ctx, project)
+	org, err := r.resolveOrganization(ctx, project)
 	if err != nil {
 		meta.SetStatusCondition(&project.Status.Conditions, metav1.Condition{
 			Type:               conditionTypeReady,
@@ -115,16 +116,25 @@ func (r *LangfuseProjectReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
-	project.Status.OrganizationID = orgID
+	project.Status.OrganizationID = org.Status.OrganizationID
 
-	// 6. Build the Langfuse API client.
-	lfClient, err := buildLangfuseClient(ctx, r.Client, instance)
+	// 6. Build the public-API client (org-scoped key minted via the admin API).
+	lfClient, err := r.ensureProjectClient(ctx, instance, org)
 	if err != nil {
+		reason := "ClientError"
+		message := err.Error()
+		if langfuse.IsForbidden(err) {
+			// Minting the org-scoped key uses the admin API, which is gated
+			// behind the Enterprise/Pro entitlement.
+			reason = "RequiresEELicense"
+			message = "The Langfuse organization-management API requires a self-hosted Enterprise/Pro license. " +
+				"Set spec.eeLicenseKey on the LangfuseInstance. See docs/guide/multi-tenancy.md."
+		}
 		meta.SetStatusCondition(&project.Status.Conditions, metav1.Condition{
 			Type:               conditionTypeReady,
 			Status:             metav1.ConditionFalse,
-			Reason:             "ClientError",
-			Message:            err.Error(),
+			Reason:             reason,
+			Message:            message,
 			ObservedGeneration: project.Generation,
 		})
 		project.Status.Ready = false
@@ -135,7 +145,7 @@ func (r *LangfuseProjectReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// 7. Sync project.
-	projectID, err := r.syncProject(ctx, lfClient, project, orgID)
+	projectID, err := r.syncProject(ctx, lfClient, project)
 	if err != nil {
 		meta.SetStatusCondition(&project.Status.Conditions, metav1.Condition{
 			Type:               conditionTypeReady,
@@ -186,7 +196,7 @@ func (r *LangfuseProjectReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	log.Info("reconciled project",
 		"projectId", projectID,
-		"organizationId", orgID,
+		"organizationId", org.Status.OrganizationID,
 		"apiKeys", len(apiKeyStatuses),
 	)
 
@@ -204,10 +214,14 @@ func (r *LangfuseProjectReconciler) handleDeletion(ctx context.Context, project 
 	// Attempt cleanup via Langfuse API (best effort).
 	if project.Status.ProjectID != "" {
 		instance, err := r.resolveInstance(ctx, project)
-		if err != nil {
+		org, orgErr := r.resolveOrganization(ctx, project)
+		switch {
+		case err != nil:
 			log.Error(err, "could not resolve instance during deletion, skipping Langfuse cleanup")
-		} else {
-			lfClient, err := buildLangfuseClient(ctx, r.Client, instance)
+		case orgErr != nil:
+			log.Error(orgErr, "could not resolve organization during deletion, skipping Langfuse cleanup")
+		default:
+			lfClient, err := r.ensureProjectClient(ctx, instance, org)
 			if err != nil {
 				log.Error(err, "could not build Langfuse client during deletion, skipping Langfuse cleanup")
 			} else {
@@ -276,7 +290,7 @@ func (r *LangfuseProjectReconciler) revokeAPIKeys(ctx context.Context, lfClient 
 
 	for _, ak := range apiKeys {
 		if managedPublicKeys[ak.PublicKey] {
-			if err := lfClient.DeleteAPIKey(ctx, ak.ID); err != nil {
+			if err := lfClient.DeleteAPIKey(ctx, project.Status.ProjectID, ak.ID); err != nil {
 				log.Error(err, "failed to revoke API key (best effort)", "apiKeyId", ak.ID)
 			} else {
 				log.Info("revoked API key", "apiKeyId", ak.ID)
@@ -308,8 +322,8 @@ func (r *LangfuseProjectReconciler) resolveInstance(ctx context.Context, project
 	return instance, nil
 }
 
-// resolveOrganization fetches the LangfuseOrganization and returns its Langfuse organization ID.
-func (r *LangfuseProjectReconciler) resolveOrganization(ctx context.Context, project *v1alpha1.LangfuseProject) (string, error) {
+// resolveOrganization fetches the LangfuseOrganization referenced by the project.
+func (r *LangfuseProjectReconciler) resolveOrganization(ctx context.Context, project *v1alpha1.LangfuseProject) (*v1alpha1.LangfuseOrganization, error) {
 	ns := project.Spec.OrganizationRef.Namespace
 	if ns == "" {
 		ns = project.Namespace
@@ -319,24 +333,88 @@ func (r *LangfuseProjectReconciler) resolveOrganization(ctx context.Context, pro
 	key := types.NamespacedName{Name: project.Spec.OrganizationRef.Name, Namespace: ns}
 	if err := r.Get(ctx, key, org); err != nil {
 		if apierrors.IsNotFound(err) {
-			return "", fmt.Errorf("LangfuseOrganization %q not found", key)
+			return nil, fmt.Errorf("LangfuseOrganization %q not found", key)
 		}
-		return "", fmt.Errorf("fetching LangfuseOrganization %q: %w", key, err)
+		return nil, fmt.Errorf("fetching LangfuseOrganization %q: %w", key, err)
 	}
 
 	if !org.Status.Ready {
-		return "", fmt.Errorf("LangfuseOrganization %q is not ready", key)
+		return nil, fmt.Errorf("LangfuseOrganization %q is not ready", key)
 	}
 
 	if org.Status.OrganizationID == "" {
-		return "", fmt.Errorf("LangfuseOrganization %q has no organization ID set", key)
+		return nil, fmt.Errorf("LangfuseOrganization %q has no organization ID set", key)
 	}
 
-	return org.Status.OrganizationID, nil
+	return org, nil
+}
+
+// ensureProjectClient returns a public-API client authenticated with an
+// organization-scoped API key. Projects are managed through Langfuse's public
+// API (Basic auth), not the admin API — so the operator mints an org-scoped
+// key via the admin API and caches it in a dedicated Secret owned by the
+// LangfuseOrganization (<org>-orgkey), reusing it across reconciles.
+func (r *LangfuseProjectReconciler) ensureProjectClient(
+	ctx context.Context,
+	instance *v1alpha1.LangfuseInstance,
+	org *v1alpha1.LangfuseOrganization,
+) (langfuse.Client, error) {
+	log := logf.FromContext(ctx)
+	baseURL := fmt.Sprintf("http://%s-web.%s.svc:3000", instance.Name, instance.Namespace)
+	keySecretName := org.Name + "-orgkey"
+
+	// Reuse the cached org-scoped key if present.
+	cached := &corev1.Secret{}
+	err := r.Get(ctx, types.NamespacedName{Name: keySecretName, Namespace: org.Namespace}, cached)
+	if err == nil {
+		pk := string(cached.Data["publicKey"])
+		sk := string(cached.Data["secretKey"])
+		if pk != "" && sk != "" {
+			return langfuse.NewProjectClient(baseURL, pk, sk), nil
+		}
+		log.Info("cached org key secret is incomplete, re-minting", "secret", keySecretName)
+	} else if !apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("reading cached org key secret %q: %w", keySecretName, err)
+	}
+
+	// Mint a new organization-scoped key via the admin API.
+	adminClient, err := buildLangfuseClient(ctx, r.Client, instance)
+	if err != nil {
+		return nil, err
+	}
+	pair, err := adminClient.CreateOrganizationAPIKey(ctx, org.Status.OrganizationID,
+		fmt.Sprintf("langfuse-operator (%s)", org.Name))
+	if err != nil {
+		return nil, fmt.Errorf("minting organization API key: %w", err)
+	}
+
+	// Cache it in a Secret owned by the organization so it is reused and is
+	// garbage-collected when the organization CR is deleted.
+	keySecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      keySecretName,
+			Namespace: org.Namespace,
+			Labels:    resources.CommonLabels(instance, "org-api-key"),
+		},
+		Type: corev1.SecretTypeOpaque,
+		StringData: map[string]string{
+			"publicKey": pair.PublicKey,
+			"secretKey": pair.SecretKey,
+		},
+	}
+	if err := controllerutil.SetControllerReference(org, keySecret, r.Scheme); err != nil {
+		return nil, fmt.Errorf("setting owner reference on org key secret: %w", err)
+	}
+	if err := r.Create(ctx, keySecret); err != nil && !apierrors.IsAlreadyExists(err) {
+		return nil, fmt.Errorf("caching org key secret %q: %w", keySecretName, err)
+	}
+	log.Info("minted and cached organization-scoped API key", "secret", keySecretName, "organizationId", org.Status.OrganizationID)
+
+	return langfuse.NewProjectClient(baseURL, pair.PublicKey, pair.SecretKey), nil
 }
 
 // syncProject ensures the project exists in Langfuse and returns its ID.
-func (r *LangfuseProjectReconciler) syncProject(ctx context.Context, lfClient langfuse.Client, project *v1alpha1.LangfuseProject, orgID string) (string, error) {
+func (r *LangfuseProjectReconciler) syncProject(ctx context.Context, lfClient langfuse.Client, project *v1alpha1.LangfuseProject) (string, error) {
 	// If we already have a project ID, verify it still exists.
 	if project.Status.ProjectID != "" {
 		existing, err := lfClient.GetProject(ctx, project.Status.ProjectID)
@@ -348,8 +426,9 @@ func (r *LangfuseProjectReconciler) syncProject(ctx context.Context, lfClient la
 		logf.FromContext(ctx).Info("stored project ID not found in Langfuse, will search by name", "projectId", project.Status.ProjectID)
 	}
 
-	// Search for the project by name within the organization.
-	projects, err := lfClient.ListProjects(ctx, orgID)
+	// Search for the project by name (the org-scoped key limits visibility to
+	// the parent organization).
+	projects, err := lfClient.ListProjects(ctx)
 	if err != nil {
 		return "", fmt.Errorf("listing projects: %w", err)
 	}
@@ -360,7 +439,7 @@ func (r *LangfuseProjectReconciler) syncProject(ctx context.Context, lfClient la
 	}
 
 	// Project not found. Create it.
-	created, err := lfClient.CreateProject(ctx, orgID, project.Spec.ProjectName)
+	created, err := lfClient.CreateProject(ctx, project.Spec.ProjectName)
 	if err != nil {
 		return "", fmt.Errorf("creating project: %w", err)
 	}

@@ -1,0 +1,14 @@
+apiVersion: langfuse.palena.ai/v1alpha1
+kind: LangfuseProject
+metadata:
+  name: e2e-project
+  namespace: langfuse-e2e
+spec:
+  instanceRef:
+    name: langfuse-ext
+  organizationRef:
+    name: e2e-org
+  projectName: "e2e-project"
+  apiKeys:
+    - name: default
+      secretName: e2e-project-keys

@@ -55,6 +55,28 @@ spec:
               auth:
                 description: Auth configures authentication.
                 properties:
+                  adminApiKey:
+                    description: |-
+                      AdminApiKey references or auto-generates the ADMIN_API_KEY used by the
+                      operator to manage organizations and projects via the Langfuse
+                      organization-management API. If SecretRef is nil, the operator generates
+                      a key and stores it in the auto-generated secret. Required for the
+                      LangfuseOrganization and LangfuseProject controllers to function.
+                    properties:
+                      secretRef:
+                        description: SecretRef references an existing Secret key.
+                        properties:
+                          key:
+                            description: Key is the key within the Secret.
+                            type: string
+                          name:
+                            description: Name is the name of the Secret.
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                    type: object
                   emailPassword:
                     description: EmailPassword configures email/password authentication.
                     properties:
@@ -690,6 +712,28 @@ spec:
                         description: RunOnDeploy toggles running migrations on every
                           deployment.
                         type: boolean
+                    type: object
+                type: object
+              eeLicenseKey:
+                description: |-
+                  EELicenseKey references the Langfuse self-hosted Enterprise/Pro license
+                  key (LANGFUSE_EE_LICENSE_KEY). Required for the organization-management
+                  admin API that powers the LangfuseOrganization and LangfuseProject CRDs;
+                  without it those CRDs report a RequiresEELicense condition. Not required
+                  for a single LangfuseInstance.
+                properties:
+                  secretRef:
+                    description: SecretRef references an existing Secret key.
+                    properties:
+                      key:
+                        description: Key is the key within the Secret.
+                        type: string
+                      name:
+                        description: Name is the name of the Secret.
+                        type: string
+                    required:
+                    - key
+                    - name
                     type: object
                 type: object
               gatewayAPI:

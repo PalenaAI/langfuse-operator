@@ -2,6 +2,71 @@
 
 The operator provides two additional CRDs for managing Langfuse organizations and projects declaratively.
 
+::: danger Requires a Langfuse Enterprise/Pro self-hosted license
+`LangfuseOrganization` and `LangfuseProject` are powered by Langfuse's [organization-management API](https://langfuse.com/self-hosting/organization-management-api), which is an **Enterprise/Pro self-hosted feature**. On the **OSS** `langfuse/langfuse` image this API returns `403 "This feature is not available on your current plan."`, so these CRDs **do not work without a license**.
+
+To use them you must:
+
+1. Hold a Langfuse **self-hosted Pro or Enterprise** license key (`langfuse_ee_...`).
+2. Provide it via `spec.eeLicenseKey` on the `LangfuseInstance` (see below). The operator injects it as `LANGFUSE_EE_LICENSE_KEY` and the Langfuse server then enables the admin API.
+
+If the license is missing, the operator does not fail the instance — it surfaces a `RequiresEELicense` condition on the affected `LangfuseOrganization`/`LangfuseProject` and leaves a single `LangfuseInstance` fully functional.
+:::
+
+## Enabling: EE license key
+
+```yaml
+apiVersion: langfuse.palena.ai/v1alpha1
+kind: LangfuseInstance
+metadata:
+  name: production
+  namespace: langfuse
+spec:
+  eeLicenseKey:
+    secretRef:
+      name: langfuse-ee-license
+      key: license-key
+  # ... rest of the instance spec
+```
+
+Create the Secret first:
+
+```bash
+kubectl create secret generic langfuse-ee-license \
+  -n langfuse --from-literal=license-key="langfuse_ee_..."
+```
+
+After the instance pods restart with `LANGFUSE_EE_LICENSE_KEY` set, the Organization/Project CRDs reconcile normally.
+
+## Prerequisite: ADMIN_API_KEY
+
+The `LangfuseOrganization` and `LangfuseProject` controllers manage resources through the Langfuse [organization-management API](https://langfuse.com/self-hosting/organization-management-api), which authenticates with the instance's `ADMIN_API_KEY` as a Bearer token.
+
+The operator handles this for you:
+
+- **Auto-generated (default):** if `spec.auth.adminApiKey` is omitted, the operator generates an `ADMIN_API_KEY`, stores it in the instance's auto-generated secret (`<instance>-generated-secrets`, key `admin-api-key`), injects it into the Langfuse Web/Worker containers, and uses it for org/project reconciliation. No action required.
+- **User-provided:** to supply your own key, set `spec.auth.adminApiKey.secretRef`:
+
+  ```yaml
+  apiVersion: langfuse.palena.ai/v1alpha1
+  kind: LangfuseInstance
+  metadata:
+    name: production
+    namespace: langfuse
+  spec:
+    auth:
+      adminApiKey:
+        secretRef:
+          name: langfuse-admin
+          key: admin-api-key
+  ```
+
+  The same key is injected into the Langfuse containers and used by the operator, so the two always match.
+
+::: warning
+`LangfuseOrganization` / `LangfuseProject` CRs reconcile only after the referenced `LangfuseInstance` is running with `ADMIN_API_KEY` configured. Creating them against an instance that predates this setting requires restarting the instance pods so the new env var takes effect.
+:::
+
 ## Organizations
 
 A `LangfuseOrganization` maps to an organization in Langfuse:

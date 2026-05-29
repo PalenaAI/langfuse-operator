@@ -1,0 +1,9 @@
+apiVersion: langfuse.palena.ai/v1alpha1
+kind: LangfuseOrganization
+metadata:
+  name: e2e-org
+  namespace: langfuse-e2e
+spec:
+  instanceRef:
+    name: langfuse-ext
+  displayName: "E2E Organization"

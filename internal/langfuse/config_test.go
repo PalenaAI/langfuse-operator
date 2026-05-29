@@ -69,8 +69,8 @@ func TestBuildConfig_Minimal(t *testing.T) {
 		t.Error("NEXTAUTH_URL not found in CommonEnv")
 	}
 
-	// Should have auto-generated secret refs for NEXTAUTH_SECRET and SALT
-	for _, name := range []string{"NEXTAUTH_SECRET", "SALT"} {
+	// Should have auto-generated secret refs for NEXTAUTH_SECRET, SALT, and ADMIN_API_KEY
+	for _, name := range []string{"NEXTAUTH_SECRET", "SALT", "ADMIN_API_KEY"} {
 		found := false
 		for _, e := range cfg.CommonEnv {
 			if e.Name == name {
@@ -138,6 +138,9 @@ func TestBuildConfig_ExplicitSecretRefs(t *testing.T) {
 	instance.Spec.Auth.Salt = &v1alpha1.SecretValue{
 		SecretRef: &v1alpha1.SecretKeyRef{Name: "my-secret", Key: "salt-key"},
 	}
+	instance.Spec.Auth.AdminApiKey = &v1alpha1.SecretValue{
+		SecretRef: &v1alpha1.SecretKeyRef{Name: "my-secret", Key: "admin-key"},
+	}
 
 	cfg, err := BuildConfig(instance)
 	if err != nil {
@@ -151,6 +154,7 @@ func TestBuildConfig_ExplicitSecretRefs(t *testing.T) {
 	}{
 		{"NEXTAUTH_SECRET", "my-secret", "nas"},
 		{"SALT", "my-secret", "salt-key"},
+		{"ADMIN_API_KEY", "my-secret", "admin-key"},
 	} {
 		found := false
 		for _, e := range cfg.CommonEnv {
@@ -172,6 +176,49 @@ func TestBuildConfig_ExplicitSecretRefs(t *testing.T) {
 			t.Errorf("%s not found in CommonEnv", tc.envName)
 		}
 	}
+}
+
+func envByName(env []corev1.EnvVar, name string) (corev1.EnvVar, bool) {
+	for _, e := range env {
+		if e.Name == name {
+			return e, true
+		}
+	}
+	return corev1.EnvVar{}, false
+}
+
+func TestBuildConfig_EELicenseKey(t *testing.T) {
+	t.Run("absent by default (no auto-generation)", func(t *testing.T) {
+		cfg, err := BuildConfig(minimalInstance())
+		if err != nil {
+			t.Fatalf("BuildConfig() error: %v", err)
+		}
+		if _, ok := envByName(cfg.CommonEnv, "LANGFUSE_EE_LICENSE_KEY"); ok {
+			t.Error("LANGFUSE_EE_LICENSE_KEY should not be set when eeLicenseKey is nil")
+		}
+	})
+
+	t.Run("injected from secretRef when provided", func(t *testing.T) {
+		instance := minimalInstance()
+		instance.Spec.EELicenseKey = &v1alpha1.SecretValue{
+			SecretRef: &v1alpha1.SecretKeyRef{Name: "langfuse-ee-license", Key: "license-key"},
+		}
+		cfg, err := BuildConfig(instance)
+		if err != nil {
+			t.Fatalf("BuildConfig() error: %v", err)
+		}
+		e, ok := envByName(cfg.CommonEnv, "LANGFUSE_EE_LICENSE_KEY")
+		if !ok {
+			t.Fatal("LANGFUSE_EE_LICENSE_KEY not found in CommonEnv")
+		}
+		if e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil {
+			t.Fatal("LANGFUSE_EE_LICENSE_KEY should reference a secret")
+		}
+		if e.ValueFrom.SecretKeyRef.Name != "langfuse-ee-license" || e.ValueFrom.SecretKeyRef.Key != "license-key" {
+			t.Errorf("got ref %s/%s, want langfuse-ee-license/license-key",
+				e.ValueFrom.SecretKeyRef.Name, e.ValueFrom.SecretKeyRef.Key)
+		}
+	})
 }
 
 func TestBuildConfig_ExternalDatabase(t *testing.T) {

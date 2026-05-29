@@ -12,6 +12,7 @@ Deploys and manages the complete Langfuse stack: Web, Worker, and all dependent 
 | `web` | [`WebSpec`](#webspec) | | Web component configuration |
 | `worker` | [`WorkerSpec`](#workerspec) | | Worker component configuration |
 | `auth` | [`AuthSpec`](#authspec) | | Authentication configuration |
+| `eeLicenseKey` | *SecretValue | | `LANGFUSE_EE_LICENSE_KEY` reference. Required for the `LangfuseOrganization`/`LangfuseProject` CRDs (EE/Pro-gated org-management API); see [Multi-Tenancy](../guide/multi-tenancy.md) |
 | `secrets` | [`SecretManagementSpec`](#secretmanagementspec) | | Secret generation and rotation |
 | `database` | [`DatabaseSpec`](#databasespec) | | PostgreSQL configuration |
 | `clickhouse` | [`ClickHouseSpec`](#clickhousespec) | | ClickHouse configuration |
@@ -109,6 +110,7 @@ Deploys and manages the complete Langfuse stack: Web, Worker, and all dependent 
 | `emailPassword` | *EmailPasswordSpec | Email/password auth settings |
 | `oidc` | *OIDCSpec | OpenID Connect settings |
 | `initUser` | *InitUserSpec | Initial admin user |
+| `adminApiKey` | *SecretValue | `ADMIN_API_KEY` reference or auto-generate; used by the Organization/Project controllers (see [Multi-Tenancy](../guide/multi-tenancy.md)) |
 
 ### DatabaseSpec
 

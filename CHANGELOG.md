@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-29
+
+### Fixed
+
+- **`LangfuseOrganization` / `LangfuseProject` CRDs now actually work (against a licensed Langfuse).** They were non-functional: the controllers authenticated to the Langfuse admin API with the wrong scheme (Basic public/secret keys instead of the `ADMIN_API_KEY` Bearer token) and read a `<instance>-operator-credentials` Secret that nothing ever created or documented — so every reconcile failed with a missing-secret error. The operator now:
+  - Provisions an `ADMIN_API_KEY` (auto-generated, or from `spec.auth.adminApiKey`), injects it into the Langfuse containers, and authenticates the admin API with it as a Bearer token.
+  - Manages **projects** through Langfuse's public API using an organization-scoped key minted via the admin API and cached in a dedicated owned Secret (`<org>-orgkey`) — the admin API has no project endpoints, which the previous implementation incorrectly assumed.
+- **Auto-generated secret backfills missing keys (upgrade safety).** The operator previously skipped an existing `<instance>-generated-secrets` entirely, so upgrading to a version that adds a new generated key (such as `admin-api-key`) left the Secret without it and the Langfuse pods failed with `CreateContainerConfigError` on the missing env reference. The operator now backfills any missing operator-owned keys into the existing Secret while preserving current values.
+
+### Added
+
+- **`spec.auth.adminApiKey`** — reference or auto-generate the `ADMIN_API_KEY` used for organization/project management.
+- **`spec.eeLicenseKey`** — reference a Langfuse self-hosted Enterprise/Pro license key (`LANGFUSE_EE_LICENSE_KEY`), injected into the Langfuse containers.
+
+### Notes
+
+- **The `LangfuseOrganization` and `LangfuseProject` CRDs require a Langfuse self-hosted Enterprise/Pro license.** Langfuse's organization-management API is gated behind the `admin-api` entitlement; on the OSS image it returns `403` and the operator surfaces a `RequiresEELicense` status condition. A single `LangfuseInstance` remains fully functional on OSS. See [docs/guide/multi-tenancy.md](docs/guide/multi-tenancy.md).
+
 ## [0.6.4] - 2026-05-28
 
 ### Fixed

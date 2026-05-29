@@ -136,34 +136,73 @@ func autoGenerateEnabled(instance *v1alpha1.LangfuseInstance) bool {
 	return *instance.Spec.Secrets.AutoGenerate.Enabled
 }
 
-// ensureGeneratedSecret creates the auto-generated Secret if it does not exist.
+// generatedSecretKey names a key in the auto-generated secret and how to
+// produce its value when missing.
+type generatedSecretKey struct {
+	key string
+	gen func() (string, error)
+}
+
+// generatedSecretKeys lists every key the operator owns in the auto-generated
+// secret. Adding a key here makes it backfill into existing secrets on the
+// next reconcile (important for upgrades — e.g. admin-api-key, added in 0.7.0,
+// must be created on instances whose secret predates it, or the Langfuse pods
+// fail with CreateContainerConfigError on the missing env reference).
+func generatedSecretKeys() []generatedSecretKey {
+	return []generatedSecretKey{
+		{"nextauth-secret", func() (string, error) { return generateSecureRandom(32) }},
+		{"salt", func() (string, error) { return generateSecureRandom(16) }},
+		{"clickhouse-username", func() (string, error) { return "default", nil }},
+		{"clickhouse-password", func() (string, error) { return generateAlphanumeric(24) }},
+		{"redis-password", func() (string, error) { return generateAlphanumeric(24) }},
+		{"admin-api-key", func() (string, error) { return generateSecureRandom(32) }},
+	}
+}
+
+// ensureGeneratedSecret creates the auto-generated Secret if absent, and
+// backfills any operator-owned keys missing from an existing one.
 func (r *SecretController) ensureGeneratedSecret(ctx context.Context, instance *v1alpha1.LangfuseInstance, secretName string) error {
 	existing := &corev1.Secret{}
 	err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: instance.Namespace}, existing)
-	if err == nil {
-		// Secret already exists, nothing to do
+
+	switch {
+	case err == nil:
+		// Secret exists — backfill any keys it is missing.
+		added := []string{}
+		if existing.Data == nil {
+			existing.Data = map[string][]byte{}
+		}
+		for _, k := range generatedSecretKeys() {
+			if _, ok := existing.Data[k.key]; ok {
+				continue
+			}
+			v, genErr := k.gen()
+			if genErr != nil {
+				return fmt.Errorf("generating %s: %w", k.key, genErr)
+			}
+			existing.Data[k.key] = []byte(v)
+			added = append(added, k.key)
+		}
+		if len(added) == 0 {
+			return nil
+		}
+		if err := r.Update(ctx, existing); err != nil {
+			return fmt.Errorf("backfilling generated secret keys %v: %w", added, err)
+		}
+		logf.FromContext(ctx).Info("backfilled auto-generated secret keys", "name", secretName, "keys", added)
 		return nil
-	}
-	if !apierrors.IsNotFound(err) {
+	case !apierrors.IsNotFound(err):
 		return fmt.Errorf("checking for existing secret: %w", err)
 	}
 
-	// Generate secret values
-	nextauthSecret, err := generateSecureRandom(32)
-	if err != nil {
-		return fmt.Errorf("generating nextauth-secret: %w", err)
-	}
-	salt, err := generateSecureRandom(16)
-	if err != nil {
-		return fmt.Errorf("generating salt: %w", err)
-	}
-	chPassword, err := generateAlphanumeric(24)
-	if err != nil {
-		return fmt.Errorf("generating clickhouse-password: %w", err)
-	}
-	redisPassword, err := generateAlphanumeric(24)
-	if err != nil {
-		return fmt.Errorf("generating redis-password: %w", err)
+	// Secret does not exist — create it with all keys.
+	data := map[string][]byte{}
+	for _, k := range generatedSecretKeys() {
+		v, genErr := k.gen()
+		if genErr != nil {
+			return fmt.Errorf("generating %s: %w", k.key, genErr)
+		}
+		data[k.key] = []byte(v)
 	}
 
 	secret := &corev1.Secret{
@@ -173,13 +212,7 @@ func (r *SecretController) ensureGeneratedSecret(ctx context.Context, instance *
 			Labels:    resources.CommonLabels(instance, "secrets"),
 		},
 		Type: corev1.SecretTypeOpaque,
-		Data: map[string][]byte{
-			"nextauth-secret":     []byte(nextauthSecret),
-			"salt":                []byte(salt),
-			"clickhouse-username": []byte("default"),
-			"clickhouse-password": []byte(chPassword),
-			"redis-password":      []byte(redisPassword),
-		},
+		Data: data,
 	}
 
 	if err := controllerutil.SetControllerReference(instance, secret, r.Scheme); err != nil {

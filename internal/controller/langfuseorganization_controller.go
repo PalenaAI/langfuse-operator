@@ -114,16 +114,29 @@ func (r *LangfuseOrganizationReconciler) Reconcile(ctx context.Context, req ctrl
 	// 6. Sync organization.
 	orgID, err := r.syncOrganization(ctx, lfClient, org)
 	if err != nil {
+		reason := "SyncFailed"
+		message := fmt.Sprintf("Failed to sync organization: %s", err.Error())
+		if langfuse.IsForbidden(err) {
+			// The org-management admin API is an Enterprise/Pro feature; a 403
+			// means the instance has no valid LANGFUSE_EE_LICENSE_KEY.
+			reason = "RequiresEELicense"
+			message = "The Langfuse organization-management API requires a self-hosted Enterprise/Pro license. " +
+				"Set spec.eeLicenseKey on the LangfuseInstance. See docs/guide/multi-tenancy.md."
+		}
 		meta.SetStatusCondition(&org.Status.Conditions, metav1.Condition{
 			Type:               conditionTypeReady,
 			Status:             metav1.ConditionFalse,
-			Reason:             "SyncFailed",
-			Message:            fmt.Sprintf("Failed to sync organization: %s", err.Error()),
+			Reason:             reason,
+			Message:            message,
 			ObservedGeneration: org.Generation,
 		})
 		org.Status.Ready = false
 		if statusErr := r.Status().Update(ctx, org); statusErr != nil {
 			log.Error(statusErr, "failed to update status")
+		}
+		if langfuse.IsForbidden(err) {
+			// No point retrying tightly; licensing won't change on its own.
+			return ctrl.Result{RequeueAfter: orgResyncPeriod}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("syncing organization: %w", err)
 	}
@@ -378,27 +391,35 @@ func (r *LangfuseOrganizationReconciler) countDependentProjects(ctx context.Cont
 	return count, nil
 }
 
-// buildLangfuseClient creates a Langfuse API client from an instance's operator credentials.
-// This is a shared helper used by both organization and project controllers.
+// buildLangfuseClient creates a Langfuse organization-management API client
+// for an instance, authenticated with its ADMIN_API_KEY. This is a shared
+// helper used by both the organization and project controllers.
+//
+// The key is sourced from spec.auth.adminApiKey when the user provides a
+// SecretRef, otherwise from the operator's auto-generated secret
+// (<instance>-generated-secrets, key "admin-api-key").
 func buildLangfuseClient(ctx context.Context, c client.Client, instance *v1alpha1.LangfuseInstance) (langfuse.Client, error) {
 	baseURL := fmt.Sprintf("http://%s-web.%s.svc:3000", instance.Name, instance.Namespace)
 
-	credsSecret := &corev1.Secret{}
-	credsKey := types.NamespacedName{
-		Name:      instance.Name + "-operator-credentials",
-		Namespace: instance.Namespace,
-	}
-	if err := c.Get(ctx, credsKey, credsSecret); err != nil {
-		return nil, fmt.Errorf("getting operator credentials: %w", err)
+	secretName := instance.Name + "-generated-secrets"
+	secretKey := "admin-api-key"
+	if instance.Spec.Auth.AdminApiKey != nil && instance.Spec.Auth.AdminApiKey.SecretRef != nil {
+		secretName = instance.Spec.Auth.AdminApiKey.SecretRef.Name
+		secretKey = instance.Spec.Auth.AdminApiKey.SecretRef.Key
 	}
 
-	publicKey := string(credsSecret.Data["publicKey"])
-	secretKey := string(credsSecret.Data["secretKey"])
-	if publicKey == "" || secretKey == "" {
-		return nil, fmt.Errorf("operator credentials secret %q is missing publicKey or secretKey", credsKey)
+	secret := &corev1.Secret{}
+	key := types.NamespacedName{Name: secretName, Namespace: instance.Namespace}
+	if err := c.Get(ctx, key, secret); err != nil {
+		return nil, fmt.Errorf("getting admin API key secret %q: %w", key, err)
 	}
 
-	return langfuse.NewClient(baseURL, publicKey, secretKey), nil
+	adminAPIKey := string(secret.Data[secretKey])
+	if adminAPIKey == "" {
+		return nil, fmt.Errorf("admin API key secret %q is missing key %q", key, secretKey)
+	}
+
+	return langfuse.NewAdminClient(baseURL, adminAPIKey), nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

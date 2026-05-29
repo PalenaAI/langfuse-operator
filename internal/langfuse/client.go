@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -80,13 +81,22 @@ type Client interface {
 	AddOrgMember(ctx context.Context, orgID string, email string, role string) (*OrgMember, error)
 	UpdateOrgMemberRole(ctx context.Context, orgID string, memberID string, role string) error
 	RemoveOrgMember(ctx context.Context, orgID string, memberID string) error
-	ListProjects(ctx context.Context, orgID string) ([]Project, error)
+	// CreateOrganizationAPIKey mints an organization-scoped API key (admin API,
+	// Bearer auth). The returned secret key is only available at creation time.
+	// The key is then used with NewProjectClient to manage projects via the
+	// public API.
+	CreateOrganizationAPIKey(ctx context.Context, orgID string, note string) (*APIKeyPair, error)
+
+	// Project operations below use the public API and must be called on a
+	// client built with NewProjectClient (Basic auth, organization-scoped key).
+	// The project's organization is implied by the key's scope.
+	ListProjects(ctx context.Context) ([]Project, error)
 	GetProject(ctx context.Context, projectID string) (*Project, error)
-	CreateProject(ctx context.Context, orgID string, name string) (*Project, error)
+	CreateProject(ctx context.Context, name string) (*Project, error)
 	DeleteProject(ctx context.Context, projectID string) error
 	ListAPIKeys(ctx context.Context, projectID string) ([]APIKey, error)
 	CreateAPIKey(ctx context.Context, projectID string, note string) (*APIKeyPair, error)
-	DeleteAPIKey(ctx context.Context, apiKeyID string) error
+	DeleteAPIKey(ctx context.Context, projectID string, apiKeyID string) error
 	GetBackgroundMigrations(ctx context.Context) (*BackgroundMigrations, error)
 }
 
@@ -97,10 +107,26 @@ type httpClient struct {
 	http       *http.Client
 }
 
-// NewClient creates a new Langfuse Admin API client.
-// The baseURL should be the root URL of the Langfuse instance (e.g. http://instance-web.ns.svc:3000).
-// Authentication uses HTTP Basic auth with the provided public and secret keys.
-func NewClient(baseURL, publicKey, secretKey string) Client {
+// NewAdminClient creates a Langfuse organization-management API client.
+// The baseURL should be the root URL of the Langfuse instance (e.g.
+// http://instance-web.ns.svc:3000). The Langfuse admin API authenticates with
+// the instance's ADMIN_API_KEY presented as a Bearer token.
+func NewAdminClient(baseURL, adminAPIKey string) Client {
+	baseURL = strings.TrimRight(baseURL, "/")
+	return &httpClient{
+		baseURL:    baseURL,
+		authHeader: "Bearer " + adminAPIKey,
+		http: &http.Client{
+			Timeout: 10 * time.Second,
+		},
+	}
+}
+
+// NewProjectClient creates a Langfuse public-API client authenticated with an
+// organization-scoped API key (HTTP Basic auth). Use it for project and
+// project-API-key operations; the organization is determined by the key's
+// scope. Mint the key with an admin client's CreateOrganizationAPIKey.
+func NewProjectClient(baseURL, publicKey, secretKey string) Client {
 	baseURL = strings.TrimRight(baseURL, "/")
 	credentials := base64.StdEncoding.EncodeToString([]byte(publicKey + ":" + secretKey))
 	return &httpClient{
@@ -290,30 +316,52 @@ func (c *httpClient) RemoveOrgMember(ctx context.Context, orgID string, memberID
 	return nil
 }
 
-// ListProjects returns all projects for an organization.
-func (c *httpClient) ListProjects(ctx context.Context, orgID string) ([]Project, error) {
-	resp, err := c.doRequest(ctx, http.MethodGet, "/api/admin/projects?orgId="+orgID, nil)
+// CreateOrganizationAPIKey mints an organization-scoped API key via the admin
+// API. The secret key is only returned at creation time.
+func (c *httpClient) CreateOrganizationAPIKey(ctx context.Context, orgID string, note string) (*APIKeyPair, error) {
+	body := map[string]string{"note": note}
+	resp, err := c.doRequest(ctx, http.MethodPost, "/api/admin/organizations/"+orgID+"/apiKeys", body)
 	if err != nil {
-		return nil, fmt.Errorf("listing projects for organization %q: %w", orgID, err)
+		return nil, fmt.Errorf("creating organization API key: %w", err)
 	}
 	defer closeBody(resp)
 
 	if err := checkResponse(resp); err != nil {
-		return nil, fmt.Errorf("listing projects for organization %q: %w", orgID, err)
+		return nil, fmt.Errorf("creating organization API key: %w", err)
+	}
+
+	var keyPair APIKeyPair
+	if err := json.NewDecoder(resp.Body).Decode(&keyPair); err != nil {
+		return nil, fmt.Errorf("creating organization API key: decoding response: %w", err)
+	}
+	return &keyPair, nil
+}
+
+// ListProjects returns all projects visible to the organization-scoped key
+// (public API).
+func (c *httpClient) ListProjects(ctx context.Context) ([]Project, error) {
+	resp, err := c.doRequest(ctx, http.MethodGet, "/api/public/projects", nil)
+	if err != nil {
+		return nil, fmt.Errorf("listing projects: %w", err)
+	}
+	defer closeBody(resp)
+
+	if err := checkResponse(resp); err != nil {
+		return nil, fmt.Errorf("listing projects: %w", err)
 	}
 
 	var result struct {
-		Data []Project `json:"data"`
+		Projects []Project `json:"projects"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("listing projects for organization %q: decoding response: %w", orgID, err)
+		return nil, fmt.Errorf("listing projects: decoding response: %w", err)
 	}
-	return result.Data, nil
+	return result.Projects, nil
 }
 
-// GetProject returns a single project by ID.
+// GetProject returns a single project by ID (public API).
 func (c *httpClient) GetProject(ctx context.Context, projectID string) (*Project, error) {
-	resp, err := c.doRequest(ctx, http.MethodGet, "/api/admin/projects/"+projectID, nil)
+	resp, err := c.doRequest(ctx, http.MethodGet, "/api/public/projects/"+projectID, nil)
 	if err != nil {
 		return nil, fmt.Errorf("getting project %q: %w", projectID, err)
 	}
@@ -330,10 +378,11 @@ func (c *httpClient) GetProject(ctx context.Context, projectID string) (*Project
 	return &project, nil
 }
 
-// CreateProject creates a new project in the specified organization.
-func (c *httpClient) CreateProject(ctx context.Context, orgID string, name string) (*Project, error) {
-	body := map[string]string{"orgId": orgID, "name": name}
-	resp, err := c.doRequest(ctx, http.MethodPost, "/api/admin/projects", body)
+// CreateProject creates a new project in the organization scoped by the key
+// (public API).
+func (c *httpClient) CreateProject(ctx context.Context, name string) (*Project, error) {
+	body := map[string]string{"name": name}
+	resp, err := c.doRequest(ctx, http.MethodPost, "/api/public/projects", body)
 	if err != nil {
 		return nil, fmt.Errorf("creating project: %w", err)
 	}
@@ -350,9 +399,9 @@ func (c *httpClient) CreateProject(ctx context.Context, orgID string, name strin
 	return &project, nil
 }
 
-// DeleteProject deletes a project by ID.
+// DeleteProject deletes a project by ID (public API).
 func (c *httpClient) DeleteProject(ctx context.Context, projectID string) error {
-	resp, err := c.doRequest(ctx, http.MethodDelete, "/api/admin/projects/"+projectID, nil)
+	resp, err := c.doRequest(ctx, http.MethodDelete, "/api/public/projects/"+projectID, nil)
 	if err != nil {
 		return fmt.Errorf("deleting project %q: %w", projectID, err)
 	}
@@ -364,9 +413,9 @@ func (c *httpClient) DeleteProject(ctx context.Context, projectID string) error 
 	return nil
 }
 
-// ListAPIKeys returns all API keys for a project.
+// ListAPIKeys returns all API keys for a project (public API).
 func (c *httpClient) ListAPIKeys(ctx context.Context, projectID string) ([]APIKey, error) {
-	resp, err := c.doRequest(ctx, http.MethodGet, "/api/admin/projects/"+projectID+"/api-keys", nil)
+	resp, err := c.doRequest(ctx, http.MethodGet, "/api/public/projects/"+projectID+"/apiKeys", nil)
 	if err != nil {
 		return nil, fmt.Errorf("listing API keys for project %q: %w", projectID, err)
 	}
@@ -377,19 +426,19 @@ func (c *httpClient) ListAPIKeys(ctx context.Context, projectID string) ([]APIKe
 	}
 
 	var result struct {
-		Data []APIKey `json:"data"`
+		APIKeys []APIKey `json:"apiKeys"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("listing API keys for project %q: decoding response: %w", projectID, err)
 	}
-	return result.Data, nil
+	return result.APIKeys, nil
 }
 
-// CreateAPIKey creates a new API key pair for a project.
-// The returned APIKeyPair includes the secret key, which is only available at creation time.
+// CreateAPIKey creates a new API key pair for a project (public API).
+// The returned APIKeyPair includes the secret key, only available at creation.
 func (c *httpClient) CreateAPIKey(ctx context.Context, projectID string, note string) (*APIKeyPair, error) {
 	body := map[string]string{"note": note}
-	resp, err := c.doRequest(ctx, http.MethodPost, "/api/admin/projects/"+projectID+"/api-keys", body)
+	resp, err := c.doRequest(ctx, http.MethodPost, "/api/public/projects/"+projectID+"/apiKeys", body)
 	if err != nil {
 		return nil, fmt.Errorf("creating API key for project %q: %w", projectID, err)
 	}
@@ -406,9 +455,9 @@ func (c *httpClient) CreateAPIKey(ctx context.Context, projectID string, note st
 	return &keyPair, nil
 }
 
-// DeleteAPIKey deletes an API key by ID.
-func (c *httpClient) DeleteAPIKey(ctx context.Context, apiKeyID string) error {
-	resp, err := c.doRequest(ctx, http.MethodDelete, "/api/admin/api-keys/"+apiKeyID, nil)
+// DeleteAPIKey deletes a project-scoped API key by ID (public API).
+func (c *httpClient) DeleteAPIKey(ctx context.Context, projectID string, apiKeyID string) error {
+	resp, err := c.doRequest(ctx, http.MethodDelete, "/api/public/projects/"+projectID+"/apiKeys/"+apiKeyID, nil)
 	if err != nil {
 		return fmt.Errorf("deleting API key %q: %w", apiKeyID, err)
 	}
@@ -476,6 +525,19 @@ type apiError struct {
 
 func (e *apiError) Error() string {
 	return fmt.Sprintf("API returned status %d: %s", e.StatusCode, e.Body)
+}
+
+// IsForbidden reports whether err is a 403 from the Langfuse API. The
+// organization-management admin API returns 403 ("not available on your
+// current plan") when the instance lacks the Enterprise/Pro entitlement, so
+// the Org/Project controllers use this to surface a RequiresEELicense status
+// instead of a generic sync failure.
+func IsForbidden(err error) bool {
+	var apiErr *apiError
+	if errors.As(err, &apiErr) {
+		return apiErr.StatusCode == http.StatusForbidden
+	}
+	return false
 }
 
 // closeBody drains and closes an HTTP response body. The error is intentionally

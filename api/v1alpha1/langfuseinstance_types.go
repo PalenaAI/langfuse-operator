@@ -192,6 +192,13 @@ type AuthSpec struct {
 	// InitUser configures an initial admin user.
 	// +optional
 	InitUser *InitUserSpec `json:"initUser,omitempty"`
+	// AdminApiKey references or auto-generates the ADMIN_API_KEY used by the
+	// operator to manage organizations and projects via the Langfuse
+	// organization-management API. If SecretRef is nil, the operator generates
+	// a key and stores it in the auto-generated secret. Required for the
+	// LangfuseOrganization and LangfuseProject controllers to function.
+	// +optional
+	AdminApiKey *SecretValue `json:"adminApiKey,omitempty"`
 }
 
 // SecretValue represents a value that can come from a Secret reference.
@@ -922,6 +929,13 @@ type LangfuseInstanceSpec struct {
 	Worker WorkerSpec `json:"worker,omitempty"`
 	// Auth configures authentication.
 	Auth AuthSpec `json:"auth"`
+	// EELicenseKey references the Langfuse self-hosted Enterprise/Pro license
+	// key (LANGFUSE_EE_LICENSE_KEY). Required for the organization-management
+	// admin API that powers the LangfuseOrganization and LangfuseProject CRDs;
+	// without it those CRDs report a RequiresEELicense condition. Not required
+	// for a single LangfuseInstance.
+	// +optional
+	EELicenseKey *SecretValue `json:"eeLicenseKey,omitempty"`
 	// Secrets configures secret management.
 	// +optional
 	Secrets *SecretManagementSpec `json:"secrets,omitempty"`

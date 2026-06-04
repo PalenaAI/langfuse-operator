@@ -21,6 +21,7 @@ Deploys and manages the complete Langfuse stack: Web, Worker, and all dependent 
 | `llm` | [`LLMSpec`](#llmspec) | | LLM integration |
 | `ingress` | [`IngressSpec`](#ingressspec) | | Kubernetes Ingress |
 | `route` | [`RouteSpec`](#routespec) | | OpenShift Route |
+| `gatewayAPI` | [`GatewayAPISpec`](#gatewayapispec) | | Gateway API HTTPRoute |
 | `security` | [`SecuritySpec`](#securityspec) | | Security settings |
 | `observability` | [`ObservabilitySpec`](#observabilityspec) | | Monitoring and tracing |
 | `circuitBreaker` | [`CircuitBreakerSpec`](#circuitbreakerspec) | | Dependency circuit breaking |
@@ -170,13 +171,381 @@ Deploys and manages the complete Langfuse stack: Web, Worker, and all dependent 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `strategy` | string | `rolling` | Upgrade strategy |
-| `preUpgrade.runMigrations` | *bool | `true` | Run migrations before upgrade |
-| `preUpgrade.backupDatabase` | bool | `false` | Trigger CNPG backup |
-| `rollingUpdate.maxUnavailable` | *int32 | `0` | Max unavailable during update |
-| `rollingUpdate.maxSurge` | *int32 | `1` | Max surge during update |
-| `postUpgrade.runBackgroundMigrations` | *bool | `true` | Monitor background migrations |
-| `postUpgrade.healthCheckTimeout` | string | `120s` | Health check timeout |
-| `postUpgrade.autoRollback` | bool | `false` | Revert on health failure |
+| `preUpgrade` | [`*PreUpgradeSpec`](#preupgradespec) | | Actions before upgrade |
+| `rollingUpdate` | [`*RollingUpdateSpec`](#rollingupdatespec) | | Rolling update parameters |
+| `postUpgrade` | [`*PostUpgradeSpec`](#postupgradespec) | | Actions after upgrade |
+
+---
+
+### Nested types
+
+The remaining `*Spec` types referenced above. Field defaults marked `*T` mean the field is a pointer (omitting it falls back to the default; setting it explicitly to the zero value sticks).
+
+### SecretValue
+
+| Field | Type | Description |
+|---|---|---|
+| `secretRef` | *SecretKeyRef | Reference to an existing Secret key. When nil and auto-generation is enabled, the operator generates the value. |
+
+### AutoscalingSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Toggle HPA creation |
+| `minReplicas` | *int32 | `1` | Lower bound |
+| `maxReplicas` | int32 | `10` | Upper bound |
+| `targetCPUUtilization` | *int32 | `80` | Target CPU utilization (%) |
+| `customMetrics` | []CustomMetric | | Additional scaling metrics (`type`, `threshold`) |
+
+### PDBSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `enabled` | bool | Toggle PDB creation |
+| `minAvailable` | *int32 | Minimum pods that must remain available |
+
+### TopologySpreadSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Toggle topology spread constraints |
+| `maxSkew` | *int32 | `1` | Maximum spread skew |
+| `topologyKey` | string | `topology.kubernetes.io/zone` | Topology domain key |
+
+### EmailPasswordSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | *bool | `true` | Toggle email/password auth |
+| `disableSignup` | bool | `false` | Block new user registration |
+
+### OIDCSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `enabled` | bool | Toggle OIDC |
+| `issuer` | string | OIDC issuer URL |
+| `clientId` | *SecretKeyRef | Reference to OIDC client ID |
+| `clientSecret` | *SecretKeyRef | Reference to OIDC client secret |
+| `allowedDomains` | []string | Restrict login to these email domains |
+
+### InitUserSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Create the initial admin user on first boot |
+| `email` | string | | Initial user email |
+| `password` | *SecretKeyRef | | Reference to the initial password |
+| `orgName` | string | `Default` | Default organization name |
+| `projectName` | string | `Default` | Default project name |
+
+### SecretManagementSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `autoGenerate` | [`*AutoGenerateSpec`](#autogeneratespec) | Auto-generation of `NEXTAUTH_SECRET`, `SALT`, etc. |
+| `rotation` | [`*RotationSpec`](#rotationspec) | Secret-rotation detection and restart |
+
+### AutoGenerateSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | *bool | `true` | Toggle auto-generation of operator-owned secrets |
+
+### RotationSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | *bool | `true` | Detect secret changes and trigger component restarts |
+| `customMappings` | []SecretRestartMapping | | Map a Secret name → components to restart (`secretName`, `restartComponents: [web, worker]`) |
+
+### CloudNativePGSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `clusterRef` | ObjectReference | | Reference to an existing CNPG `Cluster` |
+| `database` | string | `langfuse` | Database name within the cluster |
+
+### ManagedDatabaseSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `instances` | *int32 | `1` | Number of PostgreSQL instances |
+| `storageSize` | string | `10Gi` | PVC size for each instance |
+| `storageClass` | string | | Storage class for PVCs |
+| `backup` | [`*DatabaseBackupSpec`](#databasebackupspec) | | Automated backup configuration |
+
+### DatabaseBackupSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Toggle automated backups |
+| `schedule` | string | `0 2 * * *` | Cron schedule |
+
+### ExternalDatabaseSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `secretRef` | SecretKeysRef | Reference to a Secret with connection details. Recognised keys: `url` (required, `postgres://…`), `directUrl` (optional, bypasses pooling). |
+
+### MigrationSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `runOnDeploy` | *bool | `true` | Run migrations on every deployment |
+| `backgroundMigrations` | [`*BackgroundMigrationSpec`](#backgroundmigrationspec) | | Background-migration handling |
+
+### BackgroundMigrationSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | *bool | `true` | Monitor background migrations via `/api/public/background-migrations` |
+| `timeout` | string | `3600s` | Maximum wait |
+
+### ManagedClickHouseSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `shards` | *int32 | `1` | Number of shards |
+| `replicas` | *int32 | `1` | Replicas per shard |
+| `storageSize` | string | `50Gi` | PVC size |
+| `storageClass` | string | | Storage class |
+| `resources` | [`*ClickHouseResourceSpec`](#clickhouseresourcespec) | | Resource preset or custom |
+| `auth` | [`*ClickHouseAuthSpec`](#clickhouseauthspec) | | Credentials reference |
+
+### ClickHouseResourceSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `preset` | string | One of `small`, `medium`, `large`, `custom` |
+| `custom` | *ResourceRequirements | Used when `preset: custom` |
+
+### ClickHouseAuthSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `secretRef` | *SecretKeysRef | Reference to a Secret with `username` and `password` keys. Omit to let the operator auto-generate. |
+
+### ExternalClickHouseSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `secretRef` | SecretKeysRef | Reference to a Secret with connection details. Recognised keys: `url` (HTTP, e.g. `http://ch:8123`), `migrationUrl` (native, e.g. `clickhouse://ch:9000`), `username`, `password`. |
+
+### ClickHouseEncryptionSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `enabled` | bool | Encryption at rest |
+| `blobStorage` | bool | Blob-storage encryption |
+
+### RetentionSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `traces` | [`*TableRetentionSpec`](#tableretentionspec) | TTL for trace data |
+| `observations` | [`*TableRetentionSpec`](#tableretentionspec) | TTL for observation data |
+| `scores` | [`*TableRetentionSpec`](#tableretentionspec) | TTL for score data |
+| `storagePressure` | [`*StoragePressureSpec`](#storagepressurespec) | Auto-retention under disk pressure |
+
+### TableRetentionSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `ttlDays` | int32 | Days to retain data; `0` = infinite |
+
+### StoragePressureSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Monitor ClickHouse storage pressure |
+| `warningThresholdPercent` | int32 | `75` | Emit a warning event above this |
+| `criticalThresholdPercent` | int32 | `90` | Begin pruning above this |
+| `pruneOldestPartitions` | bool | `false` | Drop oldest partitions when critical |
+| `minRetainDays` | int32 | `7` | Floor for retention even under pressure |
+
+### SchemaDriftSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Periodic schema drift detection |
+| `checkIntervalMinutes` | int32 | `60` | Interval between checks |
+| `autoRepair` | bool | `false` | Automatically repair detected drift |
+
+### ManagedRedisSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `replicas` | *int32 | `1` | Number of Redis replicas |
+| `storageSize` | string | `5Gi` | PVC size |
+
+### ExternalRedisSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `secretRef` | SecretKeysRef | Reference to a Secret with connection details. Recognised keys: `host`, `port`, `password`, `tls`. |
+
+### S3Spec
+
+| Field | Type | Description |
+|---|---|---|
+| `endpoint` | string | S3 endpoint URL (set for MinIO; omit for AWS) |
+| `region` | string | S3 region |
+| `bucket` | string | Bucket name (required) |
+| `forcePathStyle` | bool | Path-style addressing (MinIO) |
+| `credentials` | [`*S3CredentialsSpec`](#s3credentialsspec) | Credentials reference |
+
+### S3CredentialsSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `secretRef` | SecretKeysRef | Reference to a Secret with `accessKeyId` and `secretAccessKey` |
+
+### AzureBlobSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `storageAccountName` | string | Azure storage account name |
+| `containerName` | string | Blob container name |
+| `credentials` | [`*AzureCredentialsSpec`](#azurecredentialsspec) | Credentials reference |
+
+### AzureCredentialsSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `secretRef` | SecretKeysRef | Reference to a Secret with Azure credentials (typically `accountKey` or `connectionString`) |
+
+### GCSSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `bucketName` | string | GCS bucket name |
+| `projectId` | string | GCP project ID |
+| `credentials` | [`*GCSCredentialsSpec`](#gcscredentialsspec) | Credentials reference |
+
+### GCSCredentialsSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `secretRef` | SecretKeysRef | Reference to a Secret containing the GCP service-account JSON |
+
+### LLMSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `apiBase` | string | LLM API base URL |
+| `apiKey` | *SecretKeyRef | Reference to the LLM API key |
+| `model` | string | LLM model name |
+
+### IngressSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `enabled` | bool | Toggle Ingress creation |
+| `className` | string | `IngressClass` name |
+| `host` | string | Ingress hostname |
+| `annotations` | map[string]string | Additional Ingress annotations |
+| `tls` | [`*IngressTLSSpec`](#ingresstlsspec) | TLS configuration |
+
+### IngressTLSSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `enabled` | bool | Toggle TLS |
+| `secretName` | string | Existing TLS Secret name |
+| `certManager` | [`*CertManagerSpec`](#certmanagerspec) | cert-manager integration |
+
+### CertManagerSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `issuerRef.name` | string | Issuer name |
+| `issuerRef.kind` | string | `Issuer` or `ClusterIssuer` (default `ClusterIssuer`) |
+
+### RouteSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `enabled` | bool | Toggle OpenShift Route creation |
+| `host` | string | Route hostname |
+| `annotations` | map[string]string | Additional Route annotations |
+
+### GatewayAPISpec
+
+| Field | Type | Description |
+|---|---|---|
+| `enabled` | bool | Toggle HTTPRoute creation |
+| `gatewayRef.name` | string | Gateway name (required) |
+| `gatewayRef.namespace` | string | Gateway namespace (default: HTTPRoute namespace) |
+| `gatewayRef.sectionName` | string | Listener name on the Gateway |
+| `hostname` | string | HTTP hostname to match |
+| `annotations` | map[string]string | Additional HTTPRoute annotations |
+
+### NetworkPolicySpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | *bool | `true` | Create per-component NetworkPolicies |
+
+### TelemetrySpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | *bool | `true` | Toggle Langfuse's built-in telemetry (`TELEMETRY_ENABLED`) |
+
+### ObservabilitySpec
+
+| Field | Type | Description |
+|---|---|---|
+| `serviceMonitor` | [`*ServiceMonitorSpec`](#servicemonitorspec) | Prometheus ServiceMonitor |
+| `otel` | [`*OTELSpec`](#otelspec) | OpenTelemetry integration |
+
+### ServiceMonitorSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Create a Prometheus ServiceMonitor |
+| `interval` | string | `30s` | Scrape interval |
+| `labels` | map[string]string | | Additional ServiceMonitor labels |
+
+### OTELSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Toggle OTEL |
+| `endpoint` | string | | OTEL collector endpoint |
+| `protocol` | string | `grpc` | `grpc` or `http` |
+
+### ComponentCircuitBreakerSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `action` | string | | `scaleWorkerToZero`, `emitCriticalEvent`, or `none` |
+| `probeIntervalSeconds` | int32 | `15` | Health probe interval |
+| `failureThreshold` | int32 | `3` | Failures before opening the circuit |
+| `recoveryAction` | string | | `restoreScale` or `none` |
+
+### PreUpgradeSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `runMigrations` | *bool | `true` | Run migrations before upgrade |
+| `backupDatabase` | bool | `false` | Trigger a CNPG backup |
+
+### RollingUpdateSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `maxUnavailable` | *int32 | `0` | Max unavailable pods during update |
+| `maxSurge` | *int32 | `1` | Max extra pods during update |
+
+### PostUpgradeSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `runBackgroundMigrations` | *bool | `true` | Monitor background migrations after upgrade |
+| `healthCheckTimeout` | string | `120s` | Timeout for post-upgrade health checks |
+| `autoRollback` | bool | `false` | Revert on health failure |
 
 ## Example
 

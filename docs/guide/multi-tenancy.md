@@ -173,6 +173,60 @@ env:
         key: host
 ```
 
+### Wiring clients to a `LangfuseProject`
+
+The Secret created by the operator (`spec.apiKeys[].secretName`) contains three keys that match the env-var convention used by virtually every Langfuse client SDK:
+
+| Secret key | Typical client env var |
+|---|---|
+| `publicKey` | `LANGFUSE_PUBLIC_KEY` |
+| `secretKey` | `LANGFUSE_SECRET_KEY` |
+| `host` | `LANGFUSE_BASE_URL` (or `LANGFUSE_HOST`) |
+
+So any pod that wants to send traces to Langfuse just mounts those keys as env vars — no glue code required.
+
+#### Example: LibreChat
+
+LibreChat ([reads](https://www.librechat.ai/docs/configuration/langfuse) `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_BASE_URL`):
+
+```yaml
+apiVersion: langfuse.palena.ai/v1alpha1
+kind: LangfuseProject
+metadata:
+  name: librechat
+  namespace: librechat
+spec:
+  instanceRef:
+    name: production
+    namespace: langfuse
+  organizationRef:
+    name: ml-platform
+  projectName: "LibreChat"
+  apiKeys:
+    - name: librechat
+      secretName: librechat-langfuse-keys
+```
+
+Then in your LibreChat Deployment:
+
+```yaml
+containers:
+  - name: librechat
+    env:
+      - name: LANGFUSE_PUBLIC_KEY
+        valueFrom: { secretKeyRef: { name: librechat-langfuse-keys, key: publicKey } }
+      - name: LANGFUSE_SECRET_KEY
+        valueFrom: { secretKeyRef: { name: librechat-langfuse-keys, key: secretKey } }
+      - name: LANGFUSE_BASE_URL
+        valueFrom: { secretKeyRef: { name: librechat-langfuse-keys, key: host } }
+```
+
+The same pattern wires any other client (Helicone, Promptfoo, custom Node/Python apps using `langfuse` / `langfuse-python` SDKs) — only the destination env-var names differ.
+
+::: tip Cross-cluster clients
+The `host` value the operator writes is the in-cluster service URL (`http://<instance>-web.<ns>.svc:3000`). If the client lives in a different cluster or outside the cluster entirely, override `LANGFUSE_BASE_URL` to your external Ingress/Route URL instead of using the Secret's `host` key.
+:::
+
 ### Project Deletion
 
 The finalizer `langfuse.palena.ai/project-cleanup`:

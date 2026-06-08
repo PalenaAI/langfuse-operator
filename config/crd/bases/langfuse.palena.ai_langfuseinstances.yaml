@@ -209,14 +209,19 @@ spec:
                     description: Azure configures Azure Blob Storage.
                     properties:
                       containerName:
-                        description: ContainerName is the blob container name.
+                        description: ContainerName is the blob container name (Langfuse's
+                          upload "bucket").
                         type: string
                       credentials:
-                        description: Credentials references Azure credentials.
+                        description: Credentials references the Azure storage account
+                          key.
                         properties:
                           secretRef:
-                            description: SecretRef references a Secret containing
-                              Azure credentials.
+                            description: |-
+                              SecretRef references a Secret containing the Azure storage account key
+                              under the "accountKey" key (override the key name via the Keys map).
+                              Langfuse does not support Azure connection strings; the account key is
+                              required for authentication.
                             properties:
                               keys:
                                 additionalProperties:
@@ -233,9 +238,17 @@ spec:
                         required:
                         - secretRef
                         type: object
+                      endpoint:
+                        description: |-
+                          Endpoint overrides the Azure blob service endpoint. Defaults to
+                          https://<storageAccountName>.blob.core.windows.net. Set this for Azure
+                          Government, sovereign clouds, or Azurite emulators.
+                        type: string
                       storageAccountName:
-                        description: StorageAccountName is the Azure storage account
-                          name.
+                        description: |-
+                          StorageAccountName is the Azure storage account name. Used as the access
+                          key ID Langfuse passes to the Azure SDK and to derive the default blob
+                          endpoint (https://<account>.blob.core.windows.net).
                         type: string
                     required:
                     - containerName
@@ -5228,6 +5241,25 @@ spec:
                       - name
                       type: object
                     type: array
+                  image:
+                    description: |-
+                      Image overrides the container image for the Worker component. Langfuse v3
+                      ships the queue consumer as a separate image (langfuse/langfuse-worker);
+                      the main langfuse/langfuse image only serves the web app/API and does not
+                      drain the ingestion queues. By default the operator uses
+                      langfuse/langfuse-worker with the same tag, pull policy, and pull secrets
+                      as spec.image. Override only to use a custom registry or tag.
+                    properties:
+                      repository:
+                        default: langfuse/langfuse-worker
+                        description: Repository is the worker container image repository.
+                        type: string
+                      tag:
+                        description: |-
+                          Tag is the worker container image tag. Defaults to spec.image.tag when
+                          left empty, so the Web and Worker stay on the same Langfuse version.
+                        type: string
+                    type: object
                   nodeSelector:
                     additionalProperties:
                       type: string

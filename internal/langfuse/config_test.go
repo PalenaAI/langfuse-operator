@@ -423,6 +423,162 @@ func TestBuildConfig_S3BlobStorage(t *testing.T) {
 	}
 }
 
+func TestBuildConfig_AzureBlobStorage(t *testing.T) {
+	instance := minimalInstance()
+	instance.Spec.BlobStorage = &v1alpha1.BlobStorageSpec{
+		Provider: "azure",
+		Azure: &v1alpha1.AzureBlobSpec{
+			StorageAccountName: "stforgesharedprod",
+			ContainerName:      "langfuse",
+			Credentials: &v1alpha1.AzureCredentialsSpec{
+				SecretRef: v1alpha1.SecretKeysRef{
+					Name: "langfuse-secrets",
+					Keys: map[string]string{"accountKey": "blobAccountKey"},
+				},
+			},
+		},
+	}
+
+	cfg, err := BuildConfig(instance)
+	if err != nil {
+		t.Fatalf("BuildConfig() error: %v", err)
+	}
+
+	// Langfuse v3 reuses the S3 event-upload namespace for Azure. The bucket
+	// (container) is the var whose absence triggered the ZodError.
+	plain := map[string]string{
+		"LANGFUSE_S3_EVENT_UPLOAD_ENABLED":       "true",
+		"LANGFUSE_USE_AZURE_BLOB":                "true",
+		"LANGFUSE_S3_EVENT_UPLOAD_BUCKET":        "langfuse",
+		"LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT":      "https://stforgesharedprod.blob.core.windows.net",
+		"LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID": "stforgesharedprod",
+	}
+	for name, want := range plain {
+		e, ok := envByName(cfg.CommonEnv, name)
+		if !ok {
+			t.Errorf("%s not found in CommonEnv", name)
+			continue
+		}
+		if e.Value != want {
+			t.Errorf("%s = %q, want %q", name, e.Value, want)
+		}
+	}
+
+	// The account key must come from the referenced Secret, not the legacy
+	// connection-string env vars (which Langfuse ignores).
+	e, ok := envByName(cfg.CommonEnv, "LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY")
+	if !ok {
+		t.Fatal("LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY not found in CommonEnv")
+	}
+	if e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil {
+		t.Fatal("LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY should source from a Secret")
+	}
+	if e.ValueFrom.SecretKeyRef.Name != "langfuse-secrets" || e.ValueFrom.SecretKeyRef.Key != "blobAccountKey" {
+		t.Errorf("account key ref = %s/%s, want langfuse-secrets/blobAccountKey",
+			e.ValueFrom.SecretKeyRef.Name, e.ValueFrom.SecretKeyRef.Key)
+	}
+
+	// The old, ignored Azure env vars must not be emitted.
+	for _, name := range []string{"LANGFUSE_BLOB_STORAGE_PROVIDER", "LANGFUSE_AZURE_STORAGE_ACCOUNT_NAME", "LANGFUSE_AZURE_CONTAINER_NAME"} {
+		if _, ok := envByName(cfg.CommonEnv, name); ok {
+			t.Errorf("stale env var %s should no longer be emitted", name)
+		}
+	}
+}
+
+func TestBuildConfig_AzureBlobStorage_EndpointOverride(t *testing.T) {
+	instance := minimalInstance()
+	instance.Spec.BlobStorage = &v1alpha1.BlobStorageSpec{
+		Provider: "azure",
+		Azure: &v1alpha1.AzureBlobSpec{
+			StorageAccountName: "acme",
+			ContainerName:      "c",
+			Endpoint:           "https://acme.blob.core.usgovcloudapi.net",
+		},
+	}
+
+	cfg, err := BuildConfig(instance)
+	if err != nil {
+		t.Fatalf("BuildConfig() error: %v", err)
+	}
+
+	e, ok := envByName(cfg.CommonEnv, "LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT")
+	if !ok {
+		t.Fatal("LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT not found")
+	}
+	if e.Value != "https://acme.blob.core.usgovcloudapi.net" {
+		t.Errorf("endpoint = %q, want override", e.Value)
+	}
+}
+
+func TestBuildConfig_GCSBlobStorage(t *testing.T) {
+	instance := minimalInstance()
+	instance.Spec.BlobStorage = &v1alpha1.BlobStorageSpec{
+		Provider: "gcs",
+		GCS: &v1alpha1.GCSSpec{
+			BucketName: "my-gcs-bucket",
+			Credentials: &v1alpha1.GCSCredentialsSpec{
+				SecretRef: v1alpha1.SecretKeysRef{
+					Name: "gcs-creds",
+					Keys: map[string]string{"credentials": "service-account.json"},
+				},
+			},
+		},
+	}
+
+	cfg, err := BuildConfig(instance)
+	if err != nil {
+		t.Fatalf("BuildConfig() error: %v", err)
+	}
+
+	plain := map[string]string{
+		"LANGFUSE_S3_EVENT_UPLOAD_ENABLED":  "true",
+		"LANGFUSE_USE_GOOGLE_CLOUD_STORAGE": "true",
+		"LANGFUSE_S3_EVENT_UPLOAD_BUCKET":   "my-gcs-bucket",
+	}
+	for name, want := range plain {
+		e, ok := envByName(cfg.CommonEnv, name)
+		if !ok {
+			t.Errorf("%s not found in CommonEnv", name)
+			continue
+		}
+		if e.Value != want {
+			t.Errorf("%s = %q, want %q", name, e.Value, want)
+		}
+	}
+
+	e, ok := envByName(cfg.CommonEnv, "LANGFUSE_GOOGLE_CLOUD_STORAGE_CREDENTIALS")
+	if !ok {
+		t.Fatal("LANGFUSE_GOOGLE_CLOUD_STORAGE_CREDENTIALS not found in CommonEnv")
+	}
+	if e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil ||
+		e.ValueFrom.SecretKeyRef.Name != "gcs-creds" || e.ValueFrom.SecretKeyRef.Key != "service-account.json" {
+		t.Errorf("gcs credentials ref incorrect: %+v", e.ValueFrom)
+	}
+}
+
+func TestBuildConfig_GCSBlobStorage_WorkloadIdentity(t *testing.T) {
+	// No credentials → rely on ambient ADC / Workload Identity, so no
+	// credentials env var should be emitted.
+	instance := minimalInstance()
+	instance.Spec.BlobStorage = &v1alpha1.BlobStorageSpec{
+		Provider: "gcs",
+		GCS:      &v1alpha1.GCSSpec{BucketName: "wi-bucket"},
+	}
+
+	cfg, err := BuildConfig(instance)
+	if err != nil {
+		t.Fatalf("BuildConfig() error: %v", err)
+	}
+
+	if _, ok := envByName(cfg.CommonEnv, "LANGFUSE_GOOGLE_CLOUD_STORAGE_CREDENTIALS"); ok {
+		t.Error("LANGFUSE_GOOGLE_CLOUD_STORAGE_CREDENTIALS should be omitted when no credentials are provided")
+	}
+	if e, ok := envByName(cfg.CommonEnv, "LANGFUSE_S3_EVENT_UPLOAD_BUCKET"); !ok || e.Value != "wi-bucket" {
+		t.Errorf("LANGFUSE_S3_EVENT_UPLOAD_BUCKET = %q (found=%v), want wi-bucket", e.Value, ok)
+	}
+}
+
 func TestBuildConfig_TelemetryDisabled(t *testing.T) {
 	instance := minimalInstance()
 	instance.Spec.Security = &v1alpha1.SecuritySpec{

@@ -405,15 +405,16 @@ The remaining `*Spec` types referenced above. Field defaults marked `*T` mean th
 
 | Field | Type | Description |
 |---|---|---|
-| `storageAccountName` | string | Azure storage account name |
-| `containerName` | string | Blob container name |
+| `storageAccountName` | string | Azure storage account name (used as the access key ID and to derive the default endpoint) |
+| `containerName` | string | Blob container name (Langfuse's upload "bucket") |
+| `endpoint` | string | Blob service endpoint override. Defaults to `https://<storageAccountName>.blob.core.windows.net` |
 | `credentials` | [`*AzureCredentialsSpec`](#azurecredentialsspec) | Credentials reference |
 
 ### AzureCredentialsSpec
 
 | Field | Type | Description |
 |---|---|---|
-| `secretRef` | SecretKeysRef | Reference to a Secret with Azure credentials (typically `accountKey` or `connectionString`) |
+| `secretRef` | SecretKeysRef | Reference to a Secret holding the storage **account key** under the `accountKey` key (override via the Keys map). Langfuse does not support Azure connection strings. |
 
 ### GCSSpec
 

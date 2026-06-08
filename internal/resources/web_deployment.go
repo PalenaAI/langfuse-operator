@@ -102,6 +102,26 @@ func containerImage(instance *v1alpha1.LangfuseInstance) string {
 	return repo + ":" + instance.Spec.Image.Tag
 }
 
+// workerContainerImage resolves the image for the Worker component. Langfuse v3
+// ships the BullMQ queue consumer as a separate image (langfuse/langfuse-worker);
+// the main langfuse/langfuse image only serves the web app/API and never drains
+// the ingestion queues. The repository defaults to langfuse/langfuse-worker and
+// the tag defaults to spec.image.tag so Web and Worker stay on the same version.
+// Both are overridable via spec.worker.image.
+func workerContainerImage(instance *v1alpha1.LangfuseInstance) string {
+	repo := "langfuse/langfuse-worker"
+	tag := instance.Spec.Image.Tag
+	if img := instance.Spec.Worker.Image; img != nil {
+		if img.Repository != "" {
+			repo = img.Repository
+		}
+		if img.Tag != "" {
+			tag = img.Tag
+		}
+	}
+	return repo + ":" + tag
+}
+
 func httpProbe(path string, port int, initialDelay, period, failureThreshold int32) *corev1.Probe {
 	return &corev1.Probe{
 		ProbeHandler: corev1.ProbeHandler{

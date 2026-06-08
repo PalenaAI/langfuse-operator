@@ -41,6 +41,21 @@ type ImageSpec struct {
 	PullSecrets []corev1.LocalObjectReference `json:"pullSecrets,omitempty"`
 }
 
+// WorkerImageSpec overrides the container image for the Langfuse Worker
+// component. The Worker runs a different image than the Web component
+// (langfuse/langfuse-worker vs langfuse/langfuse); only Repository and Tag are
+// configurable here — pull policy and pull secrets are shared with spec.image.
+type WorkerImageSpec struct {
+	// Repository is the worker container image repository.
+	// +kubebuilder:default="langfuse/langfuse-worker"
+	// +optional
+	Repository string `json:"repository,omitempty"`
+	// Tag is the worker container image tag. Defaults to spec.image.tag when
+	// left empty, so the Web and Worker stay on the same Langfuse version.
+	// +optional
+	Tag string `json:"tag,omitempty"`
+}
+
 // ─── Web Component ──────────────────────────────────────────────────────────
 
 // WebSpec defines the desired state for the Langfuse Web component.
@@ -144,6 +159,14 @@ type WorkerSpec struct {
 	// +kubebuilder:default=1
 	// +optional
 	Replicas *int32 `json:"replicas,omitempty"`
+	// Image overrides the container image for the Worker component. Langfuse v3
+	// ships the queue consumer as a separate image (langfuse/langfuse-worker);
+	// the main langfuse/langfuse image only serves the web app/API and does not
+	// drain the ingestion queues. By default the operator uses
+	// langfuse/langfuse-worker with the same tag, pull policy, and pull secrets
+	// as spec.image. Override only to use a custom registry or tag.
+	// +optional
+	Image *WorkerImageSpec `json:"image,omitempty"`
 	// Autoscaling configures horizontal pod autoscaling.
 	// +optional
 	Autoscaling *AutoscalingSpec `json:"autoscaling,omitempty"`
@@ -601,19 +624,35 @@ type S3CredentialsSpec struct {
 }
 
 // AzureBlobSpec defines Azure Blob Storage configuration.
+//
+// Langfuse v3 talks to Azure through the shared LANGFUSE_S3_EVENT_UPLOAD_*
+// settings with the LANGFUSE_USE_AZURE_BLOB toggle: the container maps to the
+// "bucket", the storage account name to the access key ID, and the storage
+// account key to the secret access key. Connection strings are not supported by
+// Langfuse — provide the storage account key via Credentials.
 type AzureBlobSpec struct {
-	// StorageAccountName is the Azure storage account name.
+	// StorageAccountName is the Azure storage account name. Used as the access
+	// key ID Langfuse passes to the Azure SDK and to derive the default blob
+	// endpoint (https://<account>.blob.core.windows.net).
 	StorageAccountName string `json:"storageAccountName"`
-	// ContainerName is the blob container name.
+	// ContainerName is the blob container name (Langfuse's upload "bucket").
 	ContainerName string `json:"containerName"`
-	// Credentials references Azure credentials.
+	// Endpoint overrides the Azure blob service endpoint. Defaults to
+	// https://<storageAccountName>.blob.core.windows.net. Set this for Azure
+	// Government, sovereign clouds, or Azurite emulators.
+	// +optional
+	Endpoint string `json:"endpoint,omitempty"`
+	// Credentials references the Azure storage account key.
 	// +optional
 	Credentials *AzureCredentialsSpec `json:"credentials,omitempty"`
 }
 
 // AzureCredentialsSpec references Azure credentials.
 type AzureCredentialsSpec struct {
-	// SecretRef references a Secret containing Azure credentials.
+	// SecretRef references a Secret containing the Azure storage account key
+	// under the "accountKey" key (override the key name via the Keys map).
+	// Langfuse does not support Azure connection strings; the account key is
+	// required for authentication.
 	SecretRef SecretKeysRef `json:"secretRef"`
 }
 

@@ -357,19 +357,55 @@ func addBlobStorageEnv(cfg *Config, instance *v1alpha1.LangfuseInstance) {
 		if bs.Azure == nil {
 			return
 		}
-		cfg.CommonEnv = append(cfg.CommonEnv, envVar("LANGFUSE_BLOB_STORAGE_PROVIDER", "azure"))
-		cfg.CommonEnv = append(cfg.CommonEnv, envVar("LANGFUSE_AZURE_STORAGE_ACCOUNT_NAME", bs.Azure.StorageAccountName))
-		cfg.CommonEnv = append(cfg.CommonEnv, envVar("LANGFUSE_AZURE_CONTAINER_NAME", bs.Azure.ContainerName))
+		// Langfuse v3 has no native Azure env namespace; it reuses the S3 event
+		// upload settings and switches the storage client via LANGFUSE_USE_AZURE_BLOB.
+		// The container is the "bucket", the storage account name is the access
+		// key ID, and the account key is the secret access key.
+		cfg.CommonEnv = append(cfg.CommonEnv, envVar("LANGFUSE_S3_EVENT_UPLOAD_ENABLED", "true"))
+		cfg.CommonEnv = append(cfg.CommonEnv, envVar("LANGFUSE_USE_AZURE_BLOB", "true"))
+		cfg.CommonEnv = append(cfg.CommonEnv, envVar("LANGFUSE_S3_EVENT_UPLOAD_BUCKET", bs.Azure.ContainerName))
+		cfg.CommonEnv = append(cfg.CommonEnv, envVar("LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT", azureBlobEndpoint(bs.Azure)))
+		// The storage account name is not sensitive; pass it as a plain value.
+		cfg.CommonEnv = append(cfg.CommonEnv, envVar("LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID", bs.Azure.StorageAccountName))
+		if bs.Azure.Credentials != nil {
+			accountKey := bs.Azure.Credentials.SecretRef.Keys["accountKey"]
+			if accountKey == "" {
+				accountKey = "accountKey"
+			}
+			cfg.CommonEnv = append(cfg.CommonEnv,
+				envFromSecret("LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY",
+					bs.Azure.Credentials.SecretRef.Name, accountKey))
+		}
 	case "gcs":
 		if bs.GCS == nil {
 			return
 		}
-		cfg.CommonEnv = append(cfg.CommonEnv, envVar("LANGFUSE_BLOB_STORAGE_PROVIDER", "gcs"))
-		cfg.CommonEnv = append(cfg.CommonEnv, envVar("LANGFUSE_GCS_BUCKET_NAME", bs.GCS.BucketName))
-		if bs.GCS.ProjectId != "" {
-			cfg.CommonEnv = append(cfg.CommonEnv, envVar("LANGFUSE_GCS_PROJECT_ID", bs.GCS.ProjectId))
+		// GCS, like Azure, rides on the S3 event upload settings; the bucket is
+		// shared and the client is switched via LANGFUSE_USE_GOOGLE_CLOUD_STORAGE.
+		cfg.CommonEnv = append(cfg.CommonEnv, envVar("LANGFUSE_S3_EVENT_UPLOAD_ENABLED", "true"))
+		cfg.CommonEnv = append(cfg.CommonEnv, envVar("LANGFUSE_USE_GOOGLE_CLOUD_STORAGE", "true"))
+		cfg.CommonEnv = append(cfg.CommonEnv, envVar("LANGFUSE_S3_EVENT_UPLOAD_BUCKET", bs.GCS.BucketName))
+		if bs.GCS.Credentials != nil {
+			credentialsKey := bs.GCS.Credentials.SecretRef.Keys["credentials"]
+			if credentialsKey == "" {
+				credentialsKey = "credentials"
+			}
+			cfg.CommonEnv = append(cfg.CommonEnv,
+				envFromSecret("LANGFUSE_GOOGLE_CLOUD_STORAGE_CREDENTIALS",
+					bs.GCS.Credentials.SecretRef.Name, credentialsKey))
 		}
+		// When Credentials is nil, Langfuse falls back to ambient credentials
+		// (GKE Workload Identity / Application Default Credentials).
 	}
+}
+
+// azureBlobEndpoint returns the configured Azure blob endpoint or the default
+// derived from the storage account name.
+func azureBlobEndpoint(azure *v1alpha1.AzureBlobSpec) string {
+	if azure.Endpoint != "" {
+		return azure.Endpoint
+	}
+	return fmt.Sprintf("https://%s.blob.core.windows.net", azure.StorageAccountName)
 }
 
 // GeneratedSecretName returns the name of the auto-generated secrets Secret.

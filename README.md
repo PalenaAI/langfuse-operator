@@ -48,7 +48,7 @@ helm install langfuse-operator deploy/charts/langfuse-operator \
   -n langfuse-operator-system --create-namespace
 ```
 
-The chart defaults to the image tag matching its `appVersion` (e.g. `v0.7.0`). To pin a different release, pass `--set image.tag=v0.6.4`.
+The chart defaults to the image tag matching its `appVersion` (e.g. `v0.7.1`). To pin a different release, pass `--set image.tag=v0.6.4`.
 
 This installs the CRDs, RBAC, and operator deployment. See the [chart values](deploy/charts/langfuse-operator/values.yaml) for all configuration options.
 

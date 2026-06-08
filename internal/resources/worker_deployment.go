@@ -39,7 +39,7 @@ func BuildWorkerDeployment(instance *v1alpha1.LangfuseInstance, config *langfuse
 
 	container := corev1.Container{
 		Name:      "langfuse-worker",
-		Image:     containerImage(instance),
+		Image:     workerContainerImage(instance),
 		Env:       envVars,
 		Resources: resourceRequirements(instance.Spec.Worker.Resources),
 		LivenessProbe: &corev1.Probe{

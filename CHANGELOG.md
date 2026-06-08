@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-06-05
+
+### Fixed
+
+- **The Worker now runs the dedicated queue-consumer image, so ingestion actually drains.** The `langfuse-worker` Deployment was started from the main `langfuse/langfuse` image — which only serves the web app/API and never runs the BullMQ workers — so events POSTed to `/api/public/ingestion` piled up in Redis and never reached ClickHouse, leaving Tracing and Sessions empty for every project. The Worker now uses `langfuse/langfuse-worker` with the same tag as `spec.image`, while the Web component keeps using `langfuse/langfuse`.
+- **Azure Blob Storage and Google Cloud Storage now actually work.** The operator emitted `LANGFUSE_BLOB_STORAGE_PROVIDER` / `LANGFUSE_AZURE_*` / `LANGFUSE_GCS_*` env vars that Langfuse v3 does not read, and never set the required `LANGFUSE_S3_EVENT_UPLOAD_BUCKET` — so the pods crashed on startup with a `ZodError` (`LANGFUSE_S3_EVENT_UPLOAD_BUCKET … expected string, received undefined`). Langfuse v3 reuses the S3 event-upload settings for all providers, toggled by `LANGFUSE_USE_AZURE_BLOB` / `LANGFUSE_USE_GOOGLE_CLOUD_STORAGE`; the operator now generates the correct variables (container → bucket, account name → access key ID, account key → secret access key, derived blob endpoint for Azure).
+
+### Added
+
+- **`spec.worker.image`** — override the Worker container image repository and tag (defaults to `langfuse/langfuse-worker` at `spec.image.tag`) for custom registries or mirrors.
+- **`spec.blobStorage.azure.endpoint`** — override the Azure blob service endpoint (for Azure Government, sovereign clouds, or Azurite). Defaults to `https://<storageAccountName>.blob.core.windows.net`.
+
+### Changed
+
+- **Azure Blob Storage requires the storage account key, not a connection string.** Provide the account key in the referenced Secret under the `accountKey` key (Langfuse v3 has no connection-string support). GCS credentials are read from the `credentials` Secret key (inline service-account JSON), or omit the credentials block to use GKE Workload Identity.
+
 ## [0.7.0] - 2026-05-29
 
 ### Fixed

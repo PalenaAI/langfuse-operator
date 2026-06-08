@@ -18,6 +18,8 @@ package resources
 
 import (
 	"testing"
+
+	v1alpha1 "github.com/PalenaAI/langfuse-operator/api/v1alpha1"
 )
 
 func TestBuildWorkerDeployment_Minimal(t *testing.T) {
@@ -46,8 +48,11 @@ func TestBuildWorkerDeployment_Minimal(t *testing.T) {
 		t.Fatalf("container count = %d, want 1", len(containers))
 	}
 	c := containers[0]
-	if c.Image != "langfuse/langfuse:3" {
-		t.Errorf("image = %q, want %q", c.Image, "langfuse/langfuse:3")
+	// The Worker must run the dedicated queue-consumer image, not the web image.
+	// langfuse/langfuse only serves the Next.js app/API and never drains the
+	// ingestion queues, so a worker on that image leaves ClickHouse empty.
+	if c.Image != "langfuse/langfuse-worker:3" {
+		t.Errorf("image = %q, want %q", c.Image, "langfuse/langfuse-worker:3")
 	}
 
 	// No HTTP port
@@ -86,6 +91,50 @@ func TestBuildWorkerDeployment_Minimal(t *testing.T) {
 	}
 	if !foundConcurrency {
 		t.Error("LANGFUSE_WORKER_CONCURRENCY not found in env")
+	}
+}
+
+func TestBuildWorkerDeployment_WebUsesWebImage(t *testing.T) {
+	// Guard against the regression where Worker and Web shared an image helper:
+	// the Web deployment must keep using langfuse/langfuse.
+	instance := minimalInstance()
+	config := buildConfig(instance)
+	web := BuildWebDeployment(instance, config)
+
+	c := web.Spec.Template.Spec.Containers[0]
+	if c.Image != "langfuse/langfuse:3" {
+		t.Errorf("web image = %q, want %q", c.Image, "langfuse/langfuse:3")
+	}
+}
+
+func TestBuildWorkerDeployment_ImageOverride(t *testing.T) {
+	instance := minimalInstance()
+	instance.Spec.Worker.Image = &v1alpha1.WorkerImageSpec{
+		Repository: "ghcr.io/acme/langfuse-worker",
+		Tag:        "3.1.2",
+	}
+	config := buildConfig(instance)
+	deploy := BuildWorkerDeployment(instance, config)
+
+	c := deploy.Spec.Template.Spec.Containers[0]
+	if c.Image != "ghcr.io/acme/langfuse-worker:3.1.2" {
+		t.Errorf("image = %q, want %q", c.Image, "ghcr.io/acme/langfuse-worker:3.1.2")
+	}
+}
+
+func TestBuildWorkerDeployment_ImageOverrideTagDefaultsToSpecImageTag(t *testing.T) {
+	// Repository overridden, Tag left empty → fall back to spec.image.tag so
+	// Web and Worker stay on the same Langfuse version.
+	instance := minimalInstance()
+	instance.Spec.Worker.Image = &v1alpha1.WorkerImageSpec{
+		Repository: "ghcr.io/acme/langfuse-worker",
+	}
+	config := buildConfig(instance)
+	deploy := BuildWorkerDeployment(instance, config)
+
+	c := deploy.Spec.Template.Spec.Containers[0]
+	if c.Image != "ghcr.io/acme/langfuse-worker:3" {
+		t.Errorf("image = %q, want %q", c.Image, "ghcr.io/acme/langfuse-worker:3")
 	}
 }
 

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **OIDC/SSO via `spec.auth.oidc` now actually works.** The operator emitted `AUTH_OIDC_ENABLED` / `AUTH_OIDC_ISSUER` / `AUTH_OIDC_CLIENT_ID` / `AUTH_OIDC_CLIENT_SECRET`, none of which exist in Langfuse v3 — so configuring `spec.auth.oidc` produced no working single sign-on. The operator now configures Langfuse's generic custom OIDC provider with the correct `AUTH_CUSTOM_*` variables (`AUTH_CUSTOM_CLIENT_ID`, `AUTH_CUSTOM_CLIENT_SECRET`, `AUTH_CUSTOM_ISSUER`, `AUTH_CUSTOM_NAME`, `AUTH_CUSTOM_SCOPE`). Whitelist the callback URL `<NEXTAUTH_URL>/api/auth/callback/custom` in your identity provider.
+
+### Added
+
+- **`spec.auth.oidc.name`** — sets the SSO login-button label in the Langfuse UI (`AUTH_CUSTOM_NAME`, defaults to `SSO`).
+- **`spec.auth.oidc.scope`** — list of OAuth scopes requested from the provider (`AUTH_CUSTOM_SCOPE`, space-joined, defaults to `openid email profile`).
+
+### Changed
+
+- **`spec.auth.oidc.allowedDomains` renamed to `spec.auth.oidc.ssoEnforcedDomains`.** The previous field mapped to a non-existent variable and did nothing. It now maps to the upstream `AUTH_DOMAINS_WITH_SSO_ENFORCEMENT` setting: the listed domains may only sign in via SSO and password login is disabled for them. Note this is a global SSO-enforcement setting, not a per-provider allow-list — Langfuse has no generic custom-OIDC allowed-domains variable.
+
 ## [0.7.1] - 2026-06-05
 
 ### Fixed

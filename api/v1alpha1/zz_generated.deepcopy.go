@@ -1393,8 +1393,13 @@ func (in *OIDCSpec) DeepCopyInto(out *OIDCSpec) {
 		*out = new(SecretKeyRef)
 		**out = **in
 	}
-	if in.AllowedDomains != nil {
-		in, out := &in.AllowedDomains, &out.AllowedDomains
+	if in.Scope != nil {
+		in, out := &in.Scope, &out.Scope
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.SSOEnforcedDomains != nil {
+		in, out := &in.SSOEnforcedDomains, &out.SSOEnforcedDomains
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}

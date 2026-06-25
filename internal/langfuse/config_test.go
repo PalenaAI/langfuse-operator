@@ -17,6 +17,7 @@ limitations under the License.
 package langfuse
 
 import (
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -337,6 +338,87 @@ func TestBuildConfig_OIDC(t *testing.T) {
 	instance.Spec.Auth.OIDC = &v1alpha1.OIDCSpec{
 		Enabled: true,
 		Issuer:  "https://auth.example.com",
+		Name:    "Acme SSO",
+		Scope:   []string{"openid", "email", "profile", "groups"},
+		ClientId: &v1alpha1.SecretKeyRef{
+			Name: "oidc-secret",
+			Key:  "client-id",
+		},
+		ClientSecret: &v1alpha1.SecretKeyRef{
+			Name: "oidc-secret",
+			Key:  "client-secret",
+		},
+		SSOEnforcedDomains: []string{"example.com", "acme.com"},
+	}
+
+	cfg, err := BuildConfig(instance)
+	if err != nil {
+		t.Fatalf("BuildConfig() error: %v", err)
+	}
+
+	// Literal AUTH_CUSTOM_* vars.
+	expectedVars := map[string]string{
+		"AUTH_CUSTOM_ISSUER":                "https://auth.example.com",
+		"AUTH_CUSTOM_NAME":                  "Acme SSO",
+		"AUTH_CUSTOM_SCOPE":                 "openid email profile groups",
+		"AUTH_DOMAINS_WITH_SSO_ENFORCEMENT": "example.com,acme.com",
+	}
+	for name, want := range expectedVars {
+		found := false
+		for _, e := range cfg.CommonEnv {
+			if e.Name == name {
+				if e.Value != want {
+					t.Errorf("%s = %q, want %q", name, e.Value, want)
+				}
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s not found in CommonEnv", name)
+		}
+	}
+
+	// Client id/secret must come from secret refs, not literal values.
+	expectedSecretRefs := map[string]struct{ secret, key string }{
+		"AUTH_CUSTOM_CLIENT_ID":     {"oidc-secret", "client-id"},
+		"AUTH_CUSTOM_CLIENT_SECRET": {"oidc-secret", "client-secret"},
+	}
+	for name, want := range expectedSecretRefs {
+		found := false
+		for _, e := range cfg.CommonEnv {
+			if e.Name != name {
+				continue
+			}
+			found = true
+			if e.Value != "" {
+				t.Errorf("%s should be a secretKeyRef, got literal value %q", name, e.Value)
+			}
+			if e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil {
+				t.Fatalf("%s has no secretKeyRef", name)
+			}
+			ref := e.ValueFrom.SecretKeyRef
+			if ref.Name != want.secret || ref.Key != want.key {
+				t.Errorf("%s = secret %q/%q, want %q/%q", name, ref.Name, ref.Key, want.secret, want.key)
+			}
+		}
+		if !found {
+			t.Errorf("%s not found in CommonEnv", name)
+		}
+	}
+
+	// The old AUTH_OIDC_* namespace must no longer be emitted.
+	for _, e := range cfg.CommonEnv {
+		if strings.HasPrefix(e.Name, "AUTH_OIDC_") {
+			t.Errorf("unexpected legacy var %q emitted; expected AUTH_CUSTOM_* only", e.Name)
+		}
+	}
+}
+
+func TestBuildConfig_OIDCDefaults(t *testing.T) {
+	instance := minimalInstance()
+	instance.Spec.Auth.OIDC = &v1alpha1.OIDCSpec{
+		Enabled: true,
+		Issuer:  "https://auth.example.com",
 		ClientId: &v1alpha1.SecretKeyRef{
 			Name: "oidc-secret",
 			Key:  "client-id",
@@ -352,23 +434,29 @@ func TestBuildConfig_OIDC(t *testing.T) {
 		t.Fatalf("BuildConfig() error: %v", err)
 	}
 
-	expectedVars := map[string]string{
-		"AUTH_OIDC_ENABLED": "true",
-		"AUTH_OIDC_ISSUER":  "https://auth.example.com",
+	wantDefaults := map[string]string{
+		"AUTH_CUSTOM_NAME":  "SSO",
+		"AUTH_CUSTOM_SCOPE": "openid email profile",
 	}
-
-	for name, want := range expectedVars {
+	for name, want := range wantDefaults {
 		found := false
 		for _, e := range cfg.CommonEnv {
 			if e.Name == name {
-				if e.Value != want {
-					t.Errorf("%s = %q, want %q", name, e.Value, want)
-				}
 				found = true
+				if e.Value != want {
+					t.Errorf("%s = %q, want default %q", name, e.Value, want)
+				}
 			}
 		}
 		if !found {
 			t.Errorf("%s not found in CommonEnv", name)
+		}
+	}
+
+	// No SSO enforcement var when SSOEnforcedDomains is unset.
+	for _, e := range cfg.CommonEnv {
+		if e.Name == "AUTH_DOMAINS_WITH_SSO_ENFORCEMENT" {
+			t.Errorf("AUTH_DOMAINS_WITH_SSO_ENFORCEMENT should not be set when SSOEnforcedDomains is empty")
 		}
 	}
 }

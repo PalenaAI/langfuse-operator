@@ -142,14 +142,9 @@ spec:
                   oidc:
                     description: OIDC configures OpenID Connect authentication.
                     properties:
-                      allowedDomains:
-                        description: AllowedDomains restricts login to specific email
-                          domains.
-                        items:
-                          type: string
-                        type: array
                       clientId:
-                        description: ClientId references the OIDC client ID.
+                        description: ClientId references the OIDC client ID. Maps
+                          to AUTH_CUSTOM_CLIENT_ID.
                         properties:
                           key:
                             description: Key is the key within the Secret.
@@ -162,7 +157,9 @@ spec:
                         - name
                         type: object
                       clientSecret:
-                        description: ClientSecret references the OIDC client secret.
+                        description: |-
+                          ClientSecret references the OIDC client secret. Maps to
+                          AUTH_CUSTOM_CLIENT_SECRET.
                         properties:
                           key:
                             description: Key is the key within the Secret.
@@ -178,8 +175,32 @@ spec:
                         description: Enabled toggles OIDC.
                         type: boolean
                       issuer:
-                        description: Issuer is the OIDC issuer URL.
+                        description: Issuer is the OIDC issuer URL. Maps to AUTH_CUSTOM_ISSUER.
                         type: string
+                      name:
+                        description: |-
+                          Name is the display label for the SSO login button in the Langfuse UI.
+                          Maps to AUTH_CUSTOM_NAME; defaults to "SSO" when empty.
+                        type: string
+                      scope:
+                        description: |-
+                          Scope is the list of OAuth scopes requested from the provider. Maps to
+                          AUTH_CUSTOM_SCOPE (space-joined); defaults to "openid email profile" when
+                          empty.
+                        items:
+                          type: string
+                        type: array
+                      ssoEnforcedDomains:
+                        description: |-
+                          SSOEnforcedDomains is a list of email domains that are only allowed to
+                          sign in via SSO; email/password sign-in is disabled for these domains.
+                          Maps to the upstream AUTH_DOMAINS_WITH_SSO_ENFORCEMENT variable
+                          (comma-joined). Note this is a global SSO-enforcement setting, not a
+                          per-provider allow-list — upstream Langfuse has no generic
+                          AUTH_CUSTOM_ALLOWED_DOMAINS equivalent.
+                        items:
+                          type: string
+                        type: array
                     type: object
                   salt:
                     description: Salt references or auto-generates the encryption

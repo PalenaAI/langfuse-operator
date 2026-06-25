@@ -19,6 +19,7 @@ package langfuse
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -156,19 +157,40 @@ func addAuthEnv(cfg *Config, instance *v1alpha1.LangfuseInstance) {
 		}
 	}
 
-	// OIDC
-	if instance.Spec.Auth.OIDC != nil && instance.Spec.Auth.OIDC.Enabled {
-		cfg.CommonEnv = append(cfg.CommonEnv, envVar("AUTH_OIDC_ENABLED", "true"))
-		if instance.Spec.Auth.OIDC.Issuer != "" {
-			cfg.CommonEnv = append(cfg.CommonEnv, envVar("AUTH_OIDC_ISSUER", instance.Spec.Auth.OIDC.Issuer))
+	// OIDC — Langfuse's generic custom OIDC provider is configured via the
+	// AUTH_CUSTOM_* env vars (NextAuth runs on the Web container). There is no
+	// AUTH_OIDC_* namespace upstream. The IdP must whitelist the callback URL
+	// <NEXTAUTH_URL>/api/auth/callback/custom.
+	if oidc := instance.Spec.Auth.OIDC; oidc != nil && oidc.Enabled {
+		if oidc.ClientId != nil {
+			cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("AUTH_CUSTOM_CLIENT_ID",
+				oidc.ClientId.Name, oidc.ClientId.Key))
 		}
-		if instance.Spec.Auth.OIDC.ClientId != nil {
-			cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("AUTH_OIDC_CLIENT_ID",
-				instance.Spec.Auth.OIDC.ClientId.Name, instance.Spec.Auth.OIDC.ClientId.Key))
+		if oidc.ClientSecret != nil {
+			cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("AUTH_CUSTOM_CLIENT_SECRET",
+				oidc.ClientSecret.Name, oidc.ClientSecret.Key))
 		}
-		if instance.Spec.Auth.OIDC.ClientSecret != nil {
-			cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("AUTH_OIDC_CLIENT_SECRET",
-				instance.Spec.Auth.OIDC.ClientSecret.Name, instance.Spec.Auth.OIDC.ClientSecret.Key))
+		if oidc.Issuer != "" {
+			cfg.CommonEnv = append(cfg.CommonEnv, envVar("AUTH_CUSTOM_ISSUER", oidc.Issuer))
+		}
+
+		name := oidc.Name
+		if name == "" {
+			name = "SSO"
+		}
+		cfg.CommonEnv = append(cfg.CommonEnv, envVar("AUTH_CUSTOM_NAME", name))
+
+		scope := "openid email profile"
+		if len(oidc.Scope) > 0 {
+			scope = strings.Join(oidc.Scope, " ")
+		}
+		cfg.CommonEnv = append(cfg.CommonEnv, envVar("AUTH_CUSTOM_SCOPE", scope))
+
+		// SSO enforcement is a global Langfuse setting (not per-provider): the
+		// listed domains may only sign in via SSO, with password login disabled.
+		if len(oidc.SSOEnforcedDomains) > 0 {
+			cfg.CommonEnv = append(cfg.CommonEnv, envVar("AUTH_DOMAINS_WITH_SSO_ENFORCEMENT",
+				strings.Join(oidc.SSOEnforcedDomains, ",")))
 		}
 	}
 

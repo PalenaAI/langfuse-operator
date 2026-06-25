@@ -45,6 +45,9 @@ spec:
 
 ## OpenID Connect (OIDC)
 
+The operator configures Langfuse's generic **custom OIDC provider**, mapping the
+fields below to the upstream `AUTH_CUSTOM_*` environment variables.
+
 ```yaml
 spec:
   auth:
@@ -57,9 +60,28 @@ spec:
       clientSecret:
         name: oidc-secret
         key: client-secret
-      allowedDomains:
+      name: "Acme SSO"              # optional, login button label (default "SSO")
+      scope:                        # optional, default ["openid", "email", "profile"]
+        - openid
+        - email
+        - profile
+      ssoEnforcedDomains:           # optional, domains forced to use SSO
         - example.com
 ```
+
+| Field | Upstream variable | Notes |
+| --- | --- | --- |
+| `issuer` | `AUTH_CUSTOM_ISSUER` | OIDC issuer URL |
+| `clientId` | `AUTH_CUSTOM_CLIENT_ID` | from Secret |
+| `clientSecret` | `AUTH_CUSTOM_CLIENT_SECRET` | from Secret |
+| `name` | `AUTH_CUSTOM_NAME` | login button label, defaults to `SSO` |
+| `scope` | `AUTH_CUSTOM_SCOPE` | space-joined, defaults to `openid email profile` |
+| `ssoEnforcedDomains` | `AUTH_DOMAINS_WITH_SSO_ENFORCEMENT` | comma-joined; these domains may **only** sign in via SSO (password login disabled). This is a global setting, not a per-provider allow-list — upstream Langfuse has no generic custom-OIDC allowed-domains variable. |
+
+::: warning Callback URL
+Whitelist the redirect URL `<NEXTAUTH_URL>/api/auth/callback/custom` in your
+identity provider (e.g. `https://langfuse.example.com/api/auth/callback/custom`).
+:::
 
 Create the OIDC Secret:
 

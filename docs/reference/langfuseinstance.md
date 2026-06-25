@@ -221,13 +221,17 @@ The remaining `*Spec` types referenced above. Field defaults marked `*T` mean th
 
 ### OIDCSpec
 
+Configures Langfuse's generic custom OIDC provider (mapped to the upstream `AUTH_CUSTOM_*` variables). The IdP must whitelist the callback URL `<NEXTAUTH_URL>/api/auth/callback/custom`.
+
 | Field | Type | Description |
 |---|---|---|
 | `enabled` | bool | Toggle OIDC |
-| `issuer` | string | OIDC issuer URL |
-| `clientId` | *SecretKeyRef | Reference to OIDC client ID |
-| `clientSecret` | *SecretKeyRef | Reference to OIDC client secret |
-| `allowedDomains` | []string | Restrict login to these email domains |
+| `issuer` | string | OIDC issuer URL → `AUTH_CUSTOM_ISSUER` |
+| `clientId` | *SecretKeyRef | Reference to OIDC client ID → `AUTH_CUSTOM_CLIENT_ID` |
+| `clientSecret` | *SecretKeyRef | Reference to OIDC client secret → `AUTH_CUSTOM_CLIENT_SECRET` |
+| `name` | string | Login button label → `AUTH_CUSTOM_NAME` (default `SSO`) |
+| `scope` | []string | Requested OAuth scopes → `AUTH_CUSTOM_SCOPE`, space-joined (default `openid email profile`) |
+| `ssoEnforcedDomains` | []string | Domains forced to sign in via SSO → `AUTH_DOMAINS_WITH_SSO_ENFORCEMENT`, comma-joined (password login disabled for them) |
 
 ### InitUserSpec
 

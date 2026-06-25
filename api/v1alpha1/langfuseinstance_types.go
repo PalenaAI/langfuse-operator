@@ -243,23 +243,44 @@ type EmailPasswordSpec struct {
 	DisableSignup bool `json:"disableSignup,omitempty"`
 }
 
-// OIDCSpec configures OpenID Connect authentication.
+// OIDCSpec configures OpenID Connect authentication via Langfuse's generic
+// custom OIDC provider. The operator maps these fields to the upstream
+// AUTH_CUSTOM_* environment variables (NextAuth runs on the Web container).
+//
+// The identity provider must whitelist the callback/redirect URL
+// <NEXTAUTH_URL>/api/auth/callback/custom (e.g.
+// https://langfuse.example.com/api/auth/callback/custom).
 type OIDCSpec struct {
 	// Enabled toggles OIDC.
 	// +optional
 	Enabled bool `json:"enabled,omitempty"`
-	// Issuer is the OIDC issuer URL.
+	// Issuer is the OIDC issuer URL. Maps to AUTH_CUSTOM_ISSUER.
 	// +optional
 	Issuer string `json:"issuer,omitempty"`
-	// ClientId references the OIDC client ID.
+	// ClientId references the OIDC client ID. Maps to AUTH_CUSTOM_CLIENT_ID.
 	// +optional
 	ClientId *SecretKeyRef `json:"clientId,omitempty"`
-	// ClientSecret references the OIDC client secret.
+	// ClientSecret references the OIDC client secret. Maps to
+	// AUTH_CUSTOM_CLIENT_SECRET.
 	// +optional
 	ClientSecret *SecretKeyRef `json:"clientSecret,omitempty"`
-	// AllowedDomains restricts login to specific email domains.
+	// Name is the display label for the SSO login button in the Langfuse UI.
+	// Maps to AUTH_CUSTOM_NAME; defaults to "SSO" when empty.
 	// +optional
-	AllowedDomains []string `json:"allowedDomains,omitempty"`
+	Name string `json:"name,omitempty"`
+	// Scope is the list of OAuth scopes requested from the provider. Maps to
+	// AUTH_CUSTOM_SCOPE (space-joined); defaults to "openid email profile" when
+	// empty.
+	// +optional
+	Scope []string `json:"scope,omitempty"`
+	// SSOEnforcedDomains is a list of email domains that are only allowed to
+	// sign in via SSO; email/password sign-in is disabled for these domains.
+	// Maps to the upstream AUTH_DOMAINS_WITH_SSO_ENFORCEMENT variable
+	// (comma-joined). Note this is a global SSO-enforcement setting, not a
+	// per-provider allow-list — upstream Langfuse has no generic
+	// AUTH_CUSTOM_ALLOWED_DOMAINS equivalent.
+	// +optional
+	SSOEnforcedDomains []string `json:"ssoEnforcedDomains,omitempty"`
 }
 
 // InitUserSpec configures an initial admin user created on first boot.

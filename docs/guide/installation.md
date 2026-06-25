@@ -49,7 +49,7 @@ helm install langfuse-operator deploy/charts/langfuse-operator \
   --create-namespace
 ```
 
-The chart defaults to the image tag matching its `appVersion` (e.g. `v0.7.1`). To pin an older release, pass `--set image.tag=v0.6.4`.
+The chart defaults to the image tag matching its `appVersion` (e.g. `v0.8.0`). To pin an older release, pass `--set image.tag=v0.6.4`.
 
 See the [chart values](https://github.com/PalenaAI/langfuse-operator/blob/main/deploy/charts/langfuse-operator/values.yaml) for all configuration options (replicas, resources, tolerations, affinity, etc.).
 

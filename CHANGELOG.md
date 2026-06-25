@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-25
+
 ### Fixed
 
 - **OIDC/SSO via `spec.auth.oidc` now actually works.** The operator emitted `AUTH_OIDC_ENABLED` / `AUTH_OIDC_ISSUER` / `AUTH_OIDC_CLIENT_ID` / `AUTH_OIDC_CLIENT_SECRET`, none of which exist in Langfuse v3 — so configuring `spec.auth.oidc` produced no working single sign-on. The operator now configures Langfuse's generic custom OIDC provider with the correct `AUTH_CUSTOM_*` variables (`AUTH_CUSTOM_CLIENT_ID`, `AUTH_CUSTOM_CLIENT_SECRET`, `AUTH_CUSTOM_ISSUER`, `AUTH_CUSTOM_NAME`, `AUTH_CUSTOM_SCOPE`). Whitelist the callback URL `<NEXTAUTH_URL>/api/auth/callback/custom` in your identity provider.

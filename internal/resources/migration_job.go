@@ -106,6 +106,9 @@ func BuildMigrationJob(instance *v1alpha1.LangfuseInstance, config *langfuse.Con
 				},
 				Spec: corev1.PodSpec{
 					RestartPolicy: corev1.RestartPolicyNever,
+					// Datastore-TLS material (CA / client certs) so the Prisma
+					// migration can verify PostgreSQL via its mounted CA path.
+					Volumes: config.Volumes,
 					InitContainers: []corev1.Container{
 						{
 							// Block migrations until the backing stores accept
@@ -124,10 +127,11 @@ func BuildMigrationJob(instance *v1alpha1.LangfuseInstance, config *langfuse.Con
 							// migrations) and pass `true` so the container exits cleanly once
 							// migrations are done. This keeps the operator version-agnostic
 							// across upstream changes to the migration mechanism.
-							Name:  "langfuse-migrate",
-							Image: containerImage(instance),
-							Args:  []string{"true"},
-							Env:   config.CommonEnv,
+							Name:         "langfuse-migrate",
+							Image:        containerImage(instance),
+							Args:         []string{"true"},
+							Env:          config.CommonEnv,
+							VolumeMounts: config.VolumeMounts,
 						},
 					},
 				},

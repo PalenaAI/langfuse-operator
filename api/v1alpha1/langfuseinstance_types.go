@@ -183,6 +183,12 @@ type WorkerSpec struct {
 	// ExtraEnv allows injecting additional environment variables.
 	// +optional
 	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
+	// ExtraVolumeMounts adds additional volume mounts to the Worker container.
+	// +optional
+	ExtraVolumeMounts []corev1.VolumeMount `json:"extraVolumeMounts,omitempty"`
+	// ExtraVolumes adds additional volumes to the Worker pod.
+	// +optional
+	ExtraVolumes []corev1.Volume `json:"extraVolumes,omitempty"`
 	// NodeSelector for scheduling Worker pods.
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
@@ -304,6 +310,48 @@ type InitUserSpec struct {
 	ProjectName string `json:"projectName,omitempty"`
 }
 
+// ─── Datastore TLS ──────────────────────────────────────────────────────────
+
+// TLSSpec configures trust for encrypted (TLS) connections from the Langfuse
+// Web and Worker components to their backing datastores.
+type TLSSpec struct {
+	// TrustedCASecretRef references a Secret (typically cert-manager-issued)
+	// holding a CA certificate to trust for outbound TLS. It is mounted into
+	// both the Web and Worker pods and exported via NODE_EXTRA_CA_CERTS, which
+	// makes the Node.js runtime trust the CA for all outbound TLS — covering
+	// ClickHouse HTTPS out of the box. It also serves as the default CA for the
+	// Redis and PostgreSQL connections when their own caSecretRef is omitted.
+	// +optional
+	TrustedCASecretRef *CACertSecretRef `json:"trustedCASecretRef,omitempty"`
+}
+
+// CACertSecretRef references a CA certificate within a Secret. cert-manager
+// stores the issuing CA under the "ca.crt" key, which is the default.
+type CACertSecretRef struct {
+	// Name is the name of the Secret.
+	Name string `json:"name"`
+	// Key is the Secret key holding the PEM-encoded CA certificate.
+	// +kubebuilder:default="ca.crt"
+	// +optional
+	Key string `json:"key,omitempty"`
+}
+
+// ClientCertSecretRef references a client certificate/key pair within a Secret
+// for mutual TLS. cert-manager stores these under the standard "tls.crt" and
+// "tls.key" keys, which are the defaults.
+type ClientCertSecretRef struct {
+	// Name is the name of the Secret.
+	Name string `json:"name"`
+	// CertKey is the Secret key holding the PEM-encoded client certificate.
+	// +kubebuilder:default="tls.crt"
+	// +optional
+	CertKey string `json:"certKey,omitempty"`
+	// KeyKey is the Secret key holding the PEM-encoded client private key.
+	// +kubebuilder:default="tls.key"
+	// +optional
+	KeyKey string `json:"keyKey,omitempty"`
+}
+
 // ─── Secret Management ──────────────────────────────────────────────────────
 
 // SecretManagementSpec configures automatic secret generation and rotation.
@@ -405,6 +453,40 @@ type DatabaseBackupSpec struct {
 type ExternalDatabaseSpec struct {
 	// SecretRef references a Secret containing connection details.
 	SecretRef SecretKeysRef `json:"secretRef"`
+	// TLS configures encrypted connections to the external PostgreSQL instance.
+	// +optional
+	TLS *DatabaseTLSSpec `json:"tls,omitempty"`
+}
+
+// DatabaseTLSSpec configures TLS for the PostgreSQL connection.
+//
+// Langfuse connects to PostgreSQL through Prisma. Because the connection string
+// is supplied via a Secret, the operator does not rewrite it directly; instead
+// it sources the base URL into DATABASE_URL_BASE and composes DATABASE_URL as
+// "$(DATABASE_URL_BASE)?<tls params>" using Kubernetes env-var interpolation.
+// The base URL in the Secret therefore must NOT contain its own query string.
+//
+// Prisma's PostgreSQL connector uses Prisma-specific parameters (not libpq's):
+// "sslmode", "sslaccept" (strict|accept_invalid_certs) and "sslcert" (path to
+// the CA certificate — note libpq's "sslrootcert" is NOT supported).
+type DatabaseTLSSpec struct {
+	// SSLMode selects the verification level, mapped to Prisma parameters:
+	//   - "disable"     → sslmode=disable (no TLS)
+	//   - "require"     → sslmode=require&sslaccept=accept_invalid_certs (encrypt, no verification)
+	//   - "verify-ca"   → sslmode=require&sslaccept=strict (verify the CA chain)
+	//   - "verify-full" → sslmode=require&sslaccept=strict (verify CA + hostname)
+	// Prisma has no CA-only mode, so "verify-ca" and "verify-full" are
+	// equivalent (both enable strict verification).
+	// +kubebuilder:validation:Enum=disable;require;verify-ca;verify-full
+	// +kubebuilder:default="require"
+	// +optional
+	SSLMode string `json:"sslMode,omitempty"`
+	// CASecretRef references the CA certificate used to verify the PostgreSQL
+	// server. When omitted, spec.tls.trustedCASecretRef is used. The CA is
+	// mounted into the Web, Worker, and migration pods and referenced as the
+	// Prisma "sslcert" parameter.
+	// +optional
+	CASecretRef *CACertSecretRef `json:"caSecretRef,omitempty"`
 }
 
 // MigrationSpec configures database migration behavior.
@@ -499,6 +581,27 @@ type ClickHouseAuthSpec struct {
 type ExternalClickHouseSpec struct {
 	// SecretRef references a Secret containing connection details.
 	SecretRef SecretKeysRef `json:"secretRef"`
+	// TLS configures encrypted connections to the external ClickHouse instance.
+	// +optional
+	TLS *ClickHouseTLSSpec `json:"tls,omitempty"`
+}
+
+// ClickHouseTLSSpec configures TLS for the ClickHouse connection.
+//
+// Langfuse talks to ClickHouse over two channels: the runtime HTTP client
+// (CLICKHOUSE_URL) and the native-protocol migration client
+// (CLICKHOUSE_MIGRATION_URL). When Enabled, the operator sets
+// CLICKHOUSE_MIGRATION_SSL=true; CA trust for the HTTPS runtime client comes
+// from the Node.js trust store via spec.tls.trustedCASecretRef
+// (NODE_EXTRA_CA_CERTS) — ClickHouse has no dedicated CA-path variable.
+//
+// The connection URLs come from the referenced Secret, so they must already use
+// the TLS schemes/ports: CLICKHOUSE_URL "https://<host>:8443" and
+// CLICKHOUSE_MIGRATION_URL "clickhouse://<host>:9440".
+type ClickHouseTLSSpec struct {
+	// Enabled toggles TLS for the ClickHouse connection.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
 }
 
 // ClickHouseEncryptionSpec configures ClickHouse encryption.
@@ -599,6 +702,37 @@ type ManagedRedisSpec struct {
 type ExternalRedisSpec struct {
 	// SecretRef references a Secret containing connection details.
 	SecretRef SecretKeysRef `json:"secretRef"`
+	// TLS configures encrypted connections to the external Redis instance.
+	// +optional
+	TLS *RedisTLSSpec `json:"tls,omitempty"`
+}
+
+// RedisTLSSpec configures TLS for the Redis/Valkey connection.
+//
+// Langfuse (via ioredis) reads the CA from REDIS_TLS_CA_PATH directly into the
+// client's trust anchors — it does NOT consult the Node.js trust store, so
+// NODE_EXTRA_CA_CERTS does not cover Redis. The operator therefore always
+// points REDIS_TLS_CA_PATH at the per-connection CA, or at
+// spec.tls.trustedCASecretRef when CASecretRef is omitted. With neither set,
+// verification falls back to the system trust store (suitable for Redis served
+// by a publicly-trusted CA).
+type RedisTLSSpec struct {
+	// Enabled toggles TLS (REDIS_TLS_ENABLED=true) for both Web and Worker.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+	// CASecretRef references the CA certificate used to verify the Redis
+	// server (REDIS_TLS_CA_PATH). Defaults to spec.tls.trustedCASecretRef.
+	// +optional
+	CASecretRef *CACertSecretRef `json:"caSecretRef,omitempty"`
+	// ClientCertSecretRef references a client certificate/key pair for mutual
+	// TLS (REDIS_TLS_CERT_PATH / REDIS_TLS_KEY_PATH).
+	// +optional
+	ClientCertSecretRef *ClientCertSecretRef `json:"clientCertSecretRef,omitempty"`
+	// ServerName overrides the TLS SNI/hostname used to verify the server
+	// certificate (REDIS_TLS_SERVERNAME). Useful when connecting via an IP or
+	// a name that differs from the certificate's subject.
+	// +optional
+	ServerName string `json:"serverName,omitempty"`
 }
 
 // ─── Blob Storage ───────────────────────────────────────────────────────────
@@ -989,6 +1123,11 @@ type LangfuseInstanceSpec struct {
 	Worker WorkerSpec `json:"worker,omitempty"`
 	// Auth configures authentication.
 	Auth AuthSpec `json:"auth"`
+	// TLS configures trust for encrypted connections to Langfuse's datastores
+	// (PostgreSQL, ClickHouse, Redis). The trusted CA it references is mounted
+	// into both the Web and Worker pods.
+	// +optional
+	TLS *TLSSpec `json:"tls,omitempty"`
 	// EELicenseKey references the Langfuse self-hosted Enterprise/Pro license
 	// key (LANGFUSE_EE_LICENSE_KEY). Required for the organization-management
 	// admin API that powers the LangfuseOrganization and LangfuseProject CRDs;

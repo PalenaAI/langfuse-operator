@@ -26,11 +26,42 @@ import (
 	v1alpha1 "github.com/PalenaAI/langfuse-operator/api/v1alpha1"
 )
 
-// Config holds the computed environment variables for Web and Worker deployments.
+// Config holds the computed environment variables and TLS volumes for the Web,
+// Worker, and migration deployments.
 type Config struct {
 	CommonEnv []corev1.EnvVar
 	WebEnv    []corev1.EnvVar
 	WorkerEnv []corev1.EnvVar
+	// Volumes and VolumeMounts carry the TLS material (CA / client certs)
+	// referenced by spec.tls and the per-datastore TLS blocks. They are applied
+	// identically to the Web, Worker, and migration pods so every component that
+	// talks to a datastore trusts the same certificates.
+	Volumes      []corev1.Volume
+	VolumeMounts []corev1.VolumeMount
+}
+
+// tlsBaseMountPath is the fixed in-container directory under which the operator
+// mounts CA and client-certificate material for datastore TLS.
+const tlsBaseMountPath = "/etc/langfuse/tls"
+
+// mountSecret appends a read-only Secret volume and matching mount to the
+// Config. items projects Secret keys to fixed filenames so env vars can point
+// at deterministic paths regardless of the Secret's own key names.
+func (c *Config) mountSecret(volName, secretName, mountPath string, items []corev1.KeyToPath) {
+	c.Volumes = append(c.Volumes, corev1.Volume{
+		Name: volName,
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: secretName,
+				Items:      items,
+			},
+		},
+	})
+	c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+		Name:      volName,
+		MountPath: mountPath,
+		ReadOnly:  true,
+	})
 }
 
 // BuildConfig computes all Langfuse environment variables from the CRD spec.
@@ -40,14 +71,21 @@ func BuildConfig(instance *v1alpha1.LangfuseInstance) (*Config, error) {
 	// ─── Auth ─────────────────────────────────────────────────
 	addAuthEnv(cfg, instance)
 
+	// ─── Datastore TLS (trusted CA) ───────────────────────────
+	// Mounted first so its path can serve as the default CA for the Redis and
+	// PostgreSQL connections below.
+	trustedCAPath := addTrustedCAEnv(cfg, instance)
+
 	// ─── Database ─────────────────────────────────────────────
-	addDatabaseEnv(cfg, instance)
+	addDatabaseEnv(cfg, instance, trustedCAPath)
 
 	// ─── ClickHouse ───────────────────────────────────────────
 	addClickHouseEnv(cfg, instance)
 
 	// ─── Redis ────────────────────────────────────────────────
-	addRedisEnv(cfg, instance)
+	if err := addRedisEnv(cfg, instance, trustedCAPath); err != nil {
+		return nil, err
+	}
 
 	// ─── Blob Storage ─────────────────────────────────────────
 	addBlobStorageEnv(cfg, instance)
@@ -210,7 +248,31 @@ func addAuthEnv(cfg *Config, instance *v1alpha1.LangfuseInstance) {
 	}
 }
 
-func addDatabaseEnv(cfg *Config, instance *v1alpha1.LangfuseInstance) {
+// addTrustedCAEnv mounts spec.tls.trustedCASecretRef (when set) and exports it
+// via NODE_EXTRA_CA_CERTS so the Node.js runtime trusts it for all outbound
+// TLS. It returns the in-container path to the mounted CA file, or "" when no
+// trusted CA is configured; the Redis and PostgreSQL builders use this path as
+// the default CA when their own caSecretRef is omitted.
+func addTrustedCAEnv(cfg *Config, instance *v1alpha1.LangfuseInstance) string {
+	if instance.Spec.TLS == nil || instance.Spec.TLS.TrustedCASecretRef == nil {
+		return ""
+	}
+
+	ref := instance.Spec.TLS.TrustedCASecretRef
+	key := ref.Key
+	if key == "" {
+		key = "ca.crt"
+	}
+
+	mountPath := tlsBaseMountPath + "/trusted-ca"
+	caPath := mountPath + "/ca.crt"
+	cfg.mountSecret("langfuse-trusted-ca", ref.Name, mountPath,
+		[]corev1.KeyToPath{{Key: key, Path: "ca.crt"}})
+	cfg.CommonEnv = append(cfg.CommonEnv, envVar("NODE_EXTRA_CA_CERTS", caPath))
+	return caPath
+}
+
+func addDatabaseEnv(cfg *Config, instance *v1alpha1.LangfuseInstance, trustedCAPath string) {
 	if instance.Spec.Database == nil {
 		return
 	}
@@ -231,14 +293,73 @@ func addDatabaseEnv(cfg *Config, instance *v1alpha1.LangfuseInstance) {
 		if urlKey == "" {
 			urlKey = "database_url"
 		}
-		cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("DATABASE_URL",
+		directKey, hasDirect := db.External.SecretRef.Keys["directUrl"]
+		hasDirect = hasDirect && directKey != ""
+
+		if db.External.TLS == nil {
+			cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("DATABASE_URL",
+				db.External.SecretRef.Name, urlKey))
+			// Direct URL for connection pooling bypass
+			if hasDirect {
+				cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("DIRECT_URL",
+					db.External.SecretRef.Name, directKey))
+			}
+			return
+		}
+
+		// TLS: the URL lives in a Secret, so we can't append to it directly.
+		// Source it into <VAR>_BASE and compose the effective URL with the TLS
+		// query string via Kubernetes $(VAR) env interpolation. The dependent
+		// var must follow its base var in the env list, which append preserves.
+		query := postgresTLSQuery(db.External.TLS, trustedCAPath, cfg)
+
+		cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("DATABASE_URL_BASE",
 			db.External.SecretRef.Name, urlKey))
-		// Direct URL for connection pooling bypass
-		if directKey, ok := db.External.SecretRef.Keys["directUrl"]; ok && directKey != "" {
-			cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("DIRECT_URL",
+		cfg.CommonEnv = append(cfg.CommonEnv, envVar("DATABASE_URL", "$(DATABASE_URL_BASE)"+query))
+		if hasDirect {
+			cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("DIRECT_URL_BASE",
 				db.External.SecretRef.Name, directKey))
+			cfg.CommonEnv = append(cfg.CommonEnv, envVar("DIRECT_URL", "$(DIRECT_URL_BASE)"+query))
 		}
 	}
+}
+
+// postgresTLSQuery builds the Prisma TLS query string ("?sslmode=…&…") for the
+// PostgreSQL connection and mounts the CA certificate when one is referenced.
+func postgresTLSQuery(tls *v1alpha1.DatabaseTLSSpec, trustedCAPath string, cfg *Config) string {
+	mode := tls.SSLMode
+	if mode == "" {
+		mode = "require"
+	}
+	if mode == "disable" {
+		return "?sslmode=disable"
+	}
+
+	params := []string{"sslmode=require"}
+	if mode == "verify-ca" || mode == "verify-full" {
+		// Prisma has no CA-only mode; strict verifies the chain and hostname.
+		params = append(params, "sslaccept=strict")
+	} else {
+		params = append(params, "sslaccept=accept_invalid_certs")
+	}
+
+	caPath := trustedCAPath
+	if tls.CASecretRef != nil {
+		key := tls.CASecretRef.Key
+		if key == "" {
+			key = "ca.crt"
+		}
+		mountPath := tlsBaseMountPath + "/postgres-ca"
+		caPath = mountPath + "/ca.crt"
+		cfg.mountSecret("langfuse-postgres-ca", tls.CASecretRef.Name, mountPath,
+			[]corev1.KeyToPath{{Key: key, Path: "ca.crt"}})
+	}
+	// Prisma reads the CA from "sslcert" (libpq's "sslrootcert" is unsupported).
+	if caPath != "" {
+		params = append(params, "sslcert="+caPath)
+	}
+
+	return "?" + strings.Join(params, "&")
 }
 
 func addClickHouseEnv(cfg *Config, instance *v1alpha1.LangfuseInstance) {
@@ -297,12 +418,19 @@ func addClickHouseEnv(cfg *Config, instance *v1alpha1.LangfuseInstance) {
 			cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("CLICKHOUSE_PASSWORD",
 				ch.External.SecretRef.Name, passwordKey))
 		}
+		// TLS: the runtime HTTP client trusts the CA via NODE_EXTRA_CA_CERTS
+		// (set by addTrustedCAEnv); only the native-protocol migration client
+		// needs an explicit SSL toggle. The TLS scheme/port for CLICKHOUSE_URL
+		// and CLICKHOUSE_MIGRATION_URL must already be set in the Secret.
+		if ch.External.TLS != nil && ch.External.TLS.Enabled {
+			cfg.CommonEnv = append(cfg.CommonEnv, envVar("CLICKHOUSE_MIGRATION_SSL", "true"))
+		}
 	}
 }
 
-func addRedisEnv(cfg *Config, instance *v1alpha1.LangfuseInstance) {
+func addRedisEnv(cfg *Config, instance *v1alpha1.LangfuseInstance, trustedCAPath string) error {
 	if instance.Spec.Redis == nil {
-		return
+		return nil
 	}
 
 	r := instance.Spec.Redis
@@ -330,11 +458,74 @@ func addRedisEnv(cfg *Config, instance *v1alpha1.LangfuseInstance) {
 			cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("REDIS_AUTH",
 				r.External.SecretRef.Name, passwordKey))
 		}
-		if tlsKey, ok := r.External.SecretRef.Keys["tls"]; ok && tlsKey != "" {
+
+		if r.External.TLS != nil {
+			if err := addRedisTLSEnv(cfg, r.External.TLS, trustedCAPath); err != nil {
+				return err
+			}
+		} else if tlsKey, ok := r.External.SecretRef.Keys["tls"]; ok && tlsKey != "" {
+			// Legacy: a boolean "tls" key in the connection Secret. Retained for
+			// backward compatibility when the typed tls block is not used.
 			cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("REDIS_TLS_ENABLED",
 				r.External.SecretRef.Name, tlsKey))
 		}
 	}
+	return nil
+}
+
+// addRedisTLSEnv translates the typed Redis TLS block into the REDIS_TLS_*
+// variables and mounts any referenced CA / client-certificate Secrets.
+func addRedisTLSEnv(cfg *Config, tls *v1alpha1.RedisTLSSpec, trustedCAPath string) error {
+	if !tls.Enabled {
+		// A CA or client cert without enabling TLS is almost certainly a
+		// misconfiguration; fail loudly rather than silently ignoring it.
+		if tls.CASecretRef != nil || tls.ClientCertSecretRef != nil {
+			return fmt.Errorf("redis.external.tls: caSecretRef/clientCertSecretRef set but tls.enabled is false")
+		}
+		return nil
+	}
+
+	cfg.CommonEnv = append(cfg.CommonEnv, envVar("REDIS_TLS_ENABLED", "true"))
+
+	// ioredis reads the CA from REDIS_TLS_CA_PATH directly (it ignores
+	// NODE_EXTRA_CA_CERTS), so fall back to the trusted CA mount when no
+	// per-connection CA is given. With neither, the system trust store is used.
+	caPath := trustedCAPath
+	if tls.CASecretRef != nil {
+		key := tls.CASecretRef.Key
+		if key == "" {
+			key = "ca.crt"
+		}
+		mountPath := tlsBaseMountPath + "/redis-ca"
+		caPath = mountPath + "/ca.crt"
+		cfg.mountSecret("langfuse-redis-ca", tls.CASecretRef.Name, mountPath,
+			[]corev1.KeyToPath{{Key: key, Path: "ca.crt"}})
+	}
+	if caPath != "" {
+		cfg.CommonEnv = append(cfg.CommonEnv, envVar("REDIS_TLS_CA_PATH", caPath))
+	}
+
+	if cc := tls.ClientCertSecretRef; cc != nil {
+		certKey := cc.CertKey
+		if certKey == "" {
+			certKey = "tls.crt"
+		}
+		keyKey := cc.KeyKey
+		if keyKey == "" {
+			keyKey = "tls.key"
+		}
+		mountPath := tlsBaseMountPath + "/redis-client"
+		cfg.mountSecret("langfuse-redis-client", cc.Name, mountPath,
+			[]corev1.KeyToPath{{Key: certKey, Path: "tls.crt"}, {Key: keyKey, Path: "tls.key"}})
+		cfg.CommonEnv = append(cfg.CommonEnv, envVar("REDIS_TLS_CERT_PATH", mountPath+"/tls.crt"))
+		cfg.CommonEnv = append(cfg.CommonEnv, envVar("REDIS_TLS_KEY_PATH", mountPath+"/tls.key"))
+	}
+
+	if tls.ServerName != "" {
+		cfg.CommonEnv = append(cfg.CommonEnv, envVar("REDIS_TLS_SERVERNAME", tls.ServerName))
+	}
+
+	return nil
 }
 
 func addBlobStorageEnv(cfg *Config, instance *v1alpha1.LangfuseInstance) {

@@ -12,6 +12,7 @@ Deploys and manages the complete Langfuse stack: Web, Worker, and all dependent 
 | `web` | [`WebSpec`](#webspec) | | Web component configuration |
 | `worker` | [`WorkerSpec`](#workerspec) | | Worker component configuration |
 | `auth` | [`AuthSpec`](#authspec) | | Authentication configuration |
+| `tls` | [`TLSSpec`](#tlsspec) | | Trusted CA for encrypted datastore connections; see [Datastore TLS](../guide/datastore-tls.md) |
 | `eeLicenseKey` | *SecretValue | | `LANGFUSE_EE_LICENSE_KEY` reference. Required for the `LangfuseOrganization`/`LangfuseProject` CRDs (EE/Pro-gated org-management API); see [Multi-Tenancy](../guide/multi-tenancy.md) |
 | `secrets` | [`SecretManagementSpec`](#secretmanagementspec) | | Secret generation and rotation |
 | `database` | [`DatabaseSpec`](#databasespec) | | PostgreSQL configuration |
@@ -97,6 +98,8 @@ Deploys and manages the complete Langfuse stack: Web, Worker, and all dependent 
 | `resources` | *ResourceRequirements | | CPU/memory requests and limits |
 | `concurrency` | *int32 | `10` | `LANGFUSE_WORKER_CONCURRENCY` |
 | `extraEnv` | []EnvVar | | Additional environment variables |
+| `extraVolumeMounts` | []VolumeMount | | Additional volume mounts on the Worker container |
+| `extraVolumes` | []Volume | | Additional volumes on the Worker pod |
 | `nodeSelector` | map[string]string | | Node selector |
 | `tolerations` | []Toleration | | Tolerations |
 | `affinity` | *Affinity | | Affinity rules |
@@ -290,7 +293,8 @@ Configures Langfuse's generic custom OIDC provider (mapped to the upstream `AUTH
 
 | Field | Type | Description |
 |---|---|---|
-| `secretRef` | SecretKeysRef | Reference to a Secret with connection details. Recognised keys: `url` (required, `postgres://…`), `directUrl` (optional, bypasses pooling). |
+| `secretRef` | SecretKeysRef | Reference to a Secret with connection details. Recognised keys: `url` (required, `postgres://…`), `directUrl` (optional, bypasses pooling). With a `tls` block the `url` must **not** contain a query string. |
+| `tls` | [`DatabaseTLSSpec`](#databasetlsspec) | TLS for the PostgreSQL connection. |
 
 ### MigrationSpec
 
@@ -334,7 +338,8 @@ Configures Langfuse's generic custom OIDC provider (mapped to the upstream `AUTH
 
 | Field | Type | Description |
 |---|---|---|
-| `secretRef` | SecretKeysRef | Reference to a Secret with connection details. Recognised keys: `url` (HTTP, e.g. `http://ch:8123`), `migrationUrl` (native, e.g. `clickhouse://ch:9000`), `username`, `password`. |
+| `secretRef` | SecretKeysRef | Reference to a Secret with connection details. Recognised keys: `url` (HTTP, e.g. `http://ch:8123`), `migrationUrl` (native, e.g. `clickhouse://ch:9000`), `username`, `password`. With a `tls` block, use the TLS scheme/port (`https://…:8443`, `clickhouse://…:9440`). |
+| `tls` | [`ClickHouseTLSSpec`](#clickhousetlsspec) | TLS for the ClickHouse connection. |
 
 ### ClickHouseEncryptionSpec
 
@@ -387,7 +392,55 @@ Configures Langfuse's generic custom OIDC provider (mapped to the upstream `AUTH
 
 | Field | Type | Description |
 |---|---|---|
-| `secretRef` | SecretKeysRef | Reference to a Secret with connection details. Recognised keys: `host`, `port`, `password`, `tls`. |
+| `secretRef` | SecretKeysRef | Reference to a Secret with connection details. Recognised keys: `host`, `port`, `password`, `tls` (legacy boolean; prefer the `tls` block). |
+| `tls` | [`RedisTLSSpec`](#redistlsspec) | TLS for the Redis connection. |
+
+### TLSSpec
+
+Trust configuration for encrypted datastore connections. See [Datastore TLS](../guide/datastore-tls.md).
+
+| Field | Type | Description |
+|---|---|---|
+| `trustedCASecretRef` | [`CACertSecretRef`](#cacertsecretref) | CA mounted into Web + Worker and exported as `NODE_EXTRA_CA_CERTS`. Covers ClickHouse HTTPS, and is the default CA for Redis/PostgreSQL. |
+
+### DatabaseTLSSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `sslMode` | string | `require` | `disable`, `require`, `verify-ca`, or `verify-full`. Mapped to Prisma's `sslmode`/`sslaccept` parameters (Prisma has no CA-only mode, so `verify-ca` ≡ `verify-full`). |
+| `caSecretRef` | [`CACertSecretRef`](#cacertsecretref) | | CA used as Prisma's `sslcert`. Defaults to `spec.tls.trustedCASecretRef`. |
+
+The operator composes `DATABASE_URL` as `$(DATABASE_URL_BASE)?<params>` via env interpolation, so the `url` in the Secret must not contain its own query string.
+
+### ClickHouseTLSSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Sets `CLICKHOUSE_MIGRATION_SSL=true`. The runtime HTTPS client trusts the CA via `NODE_EXTRA_CA_CERTS`. URLs in the Secret must use the TLS scheme/port. |
+
+### RedisTLSSpec
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Sets `REDIS_TLS_ENABLED=true` on Web + Worker. |
+| `caSecretRef` | [`CACertSecretRef`](#cacertsecretref) | | CA for `REDIS_TLS_CA_PATH`. Defaults to `spec.tls.trustedCASecretRef` (ioredis ignores `NODE_EXTRA_CA_CERTS`). |
+| `clientCertSecretRef` | [`ClientCertSecretRef`](#clientcertsecretref) | | Client cert/key for mutual TLS (`REDIS_TLS_CERT_PATH` / `REDIS_TLS_KEY_PATH`). |
+| `serverName` | string | | TLS SNI/hostname override (`REDIS_TLS_SERVERNAME`). |
+
+### CACertSecretRef
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `name` | string | | Secret name. |
+| `key` | string | `ca.crt` | Secret key holding the PEM CA certificate. |
+
+### ClientCertSecretRef
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `name` | string | | Secret name. |
+| `certKey` | string | `tls.crt` | Secret key holding the PEM client certificate. |
+| `keyKey` | string | `tls.key` | Secret key holding the PEM client private key. |
 
 ### S3Spec
 

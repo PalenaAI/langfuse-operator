@@ -52,7 +52,10 @@ func BuildWebDeployment(instance *v1alpha1.LangfuseInstance, config *langfuse.Co
 		Resources:      resourceRequirements(instance.Spec.Web.Resources),
 		LivenessProbe:  httpProbe("/api/public/health", 3000, 30, 10, 3),
 		ReadinessProbe: httpProbe("/api/public/health", 3000, 5, 10, 3),
-		VolumeMounts:   instance.Spec.Web.ExtraVolumeMounts,
+		// Datastore TLS mounts (config.VolumeMounts) come first so they share
+		// the same fixed paths the env vars point at, regardless of any
+		// user-supplied extra mounts.
+		VolumeMounts: mergeVolumeMounts(config.VolumeMounts, instance.Spec.Web.ExtraVolumeMounts),
 	}
 
 	if instance.Spec.Security != nil {
@@ -61,7 +64,7 @@ func BuildWebDeployment(instance *v1alpha1.LangfuseInstance, config *langfuse.Co
 
 	podSpec := corev1.PodSpec{
 		Containers:   []corev1.Container{container},
-		Volumes:      instance.Spec.Web.ExtraVolumes,
+		Volumes:      mergeVolumes(config.Volumes, instance.Spec.Web.ExtraVolumes),
 		NodeSelector: instance.Spec.Web.NodeSelector,
 		Tolerations:  instance.Spec.Web.Tolerations,
 		Affinity:     instance.Spec.Web.Affinity,
@@ -162,6 +165,26 @@ func mergeEnv(envSets ...[]corev1.EnvVar) []corev1.EnvVar {
 	var result []corev1.EnvVar
 	for _, envs := range envSets {
 		result = append(result, envs...)
+	}
+	return result
+}
+
+// mergeVolumes concatenates volume sets, returning nil when every set is empty
+// so the resulting PodSpec stays DeepEqual-stable with the no-TLS case.
+func mergeVolumes(sets ...[]corev1.Volume) []corev1.Volume {
+	var result []corev1.Volume
+	for _, s := range sets {
+		result = append(result, s...)
+	}
+	return result
+}
+
+// mergeVolumeMounts concatenates volume-mount sets, returning nil when every
+// set is empty.
+func mergeVolumeMounts(sets ...[]corev1.VolumeMount) []corev1.VolumeMount {
+	var result []corev1.VolumeMount
+	for _, s := range sets {
+		result = append(result, s...)
 	}
 	return result
 }

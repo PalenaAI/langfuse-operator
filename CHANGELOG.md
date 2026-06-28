@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Datastore TLS — encrypt Langfuse's connections to PostgreSQL, ClickHouse, and Redis.** New TLS configuration that applies to **both** the Web and Worker components (and the migration Job), so encryption holds across the whole data plane — the Worker does most of the Redis/ClickHouse work. See [docs/guide/datastore-tls.md](docs/guide/datastore-tls.md).
+  - **`spec.tls.trustedCASecretRef`** — mounts a caller-supplied CA (e.g. a cert-manager `ca.crt`) into the pods and exports `NODE_EXTRA_CA_CERTS`, making the Node.js runtime trust it for all outbound TLS. This alone covers ClickHouse HTTPS and is the default CA for the Redis/PostgreSQL connections.
+  - **`spec.redis.external.tls`** — `enabled`, optional `caSecretRef`, `clientCertSecretRef` (mutual TLS), and `serverName` (SNI). Maps to `REDIS_TLS_ENABLED` / `REDIS_TLS_CA_PATH` / `REDIS_TLS_CERT_PATH` / `REDIS_TLS_KEY_PATH` / `REDIS_TLS_SERVERNAME`. The CA path is always set because Langfuse's Redis client does not read the Node trust store.
+  - **`spec.clickhouse.external.tls.enabled`** — sets `CLICKHOUSE_MIGRATION_SSL=true`; provide the `https://…:8443` / `clickhouse://…:9440` URLs in the connection Secret.
+  - **`spec.database.external.tls`** — `sslMode` (`disable`/`require`/`verify-ca`/`verify-full`) and optional `caSecretRef`. The operator composes `DATABASE_URL` with Prisma's TLS parameters (`sslmode`/`sslaccept`/`sslcert`) via env interpolation, so the connection URL in the Secret must not contain a query string.
+- **`spec.worker.extraVolumes` / `spec.worker.extraVolumeMounts`** — parity with `spec.web`, so arbitrary volumes (extra certificates, etc.) can be mounted into the Worker pod as a general escape hatch.
+
 ## [0.8.0] - 2026-06-25
 
 ### Fixed

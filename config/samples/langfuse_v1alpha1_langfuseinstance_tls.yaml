@@ -1,0 +1,71 @@
+# Encrypt every connection from Langfuse to its datastores (PostgreSQL,
+# ClickHouse, Redis) with operator-issued certificates trusting a custom CA.
+#
+# This assumes a cert-manager-style PKI: one TLS Secret per datastore
+# (tls.crt / tls.key / ca.crt) plus a CA-bundle Secret. The trusted CA bundle is
+# mounted into BOTH the Web and Worker pods and exported via NODE_EXTRA_CA_CERTS;
+# the per-connection blocks add the protocol-specific wiring on top.
+apiVersion: langfuse.palena.ai/v1alpha1
+kind: LangfuseInstance
+metadata:
+  name: tls
+  namespace: langfuse
+spec:
+  image:
+    repository: "langfuse/langfuse"
+    tag: "3"
+
+  auth:
+    nextAuthUrl: "https://langfuse.example.com"
+
+  # Cluster-wide trusted CA. Mounted into web + worker, exported as
+  # NODE_EXTRA_CA_CERTS, and used as the default CA for Redis/Postgres below.
+  tls:
+    trustedCASecretRef:
+      name: internal-ca-bundle
+      key: ca.crt            # default; cert-manager's CA key
+
+  database:
+    external:
+      # The base URL in the Secret must NOT contain its own query string —
+      # the operator appends the TLS parameters via $(VAR) interpolation.
+      secretRef:
+        name: langfuse-postgres-conn
+        keys:
+          url: "database_url"
+      tls:
+        sslMode: verify-full     # disable | require | verify-ca | verify-full
+        caSecretRef:
+          name: langfuse-postgres-tls   # cert-manager Secret with ca.crt
+          key: ca.crt
+
+  clickhouse:
+    external:
+      # CLICKHOUSE_URL must already use the TLS scheme/port, e.g.
+      #   url:           https://clickhouse.example.com:8443
+      #   migrationUrl:  clickhouse://clickhouse.example.com:9440
+      secretRef:
+        name: langfuse-clickhouse-conn
+        keys:
+          url: "url"
+          migrationUrl: "migration_url"
+          username: "username"
+          password: "password"
+      tls:
+        enabled: true            # sets CLICKHOUSE_MIGRATION_SSL=true; HTTPS CA via NODE_EXTRA_CA_CERTS
+
+  redis:
+    external:
+      secretRef:
+        name: langfuse-redis-conn
+        keys:
+          host: "host"
+          port: "port"
+          password: "password"
+      tls:
+        enabled: true
+        # caSecretRef omitted → falls back to spec.tls.trustedCASecretRef.
+        # Provide clientCertSecretRef for mutual TLS:
+        clientCertSecretRef:
+          name: langfuse-redis-tls   # cert-manager Secret with tls.crt + tls.key
+        serverName: redis.example.com   # optional SNI override

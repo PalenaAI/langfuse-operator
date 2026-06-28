@@ -694,6 +694,319 @@ func TestBuildConfig_TelemetryDisabled(t *testing.T) {
 	}
 }
 
+// volumeMountByName returns the VolumeMount with the given name.
+func volumeMountByName(mounts []corev1.VolumeMount, name string) (corev1.VolumeMount, bool) {
+	for _, m := range mounts {
+		if m.Name == name {
+			return m, true
+		}
+	}
+	return corev1.VolumeMount{}, false
+}
+
+// volumeByName returns the Volume with the given name.
+func volumeByName(vols []corev1.Volume, name string) (corev1.Volume, bool) {
+	for _, v := range vols {
+		if v.Name == name {
+			return v, true
+		}
+	}
+	return corev1.Volume{}, false
+}
+
+func TestBuildConfig_TrustedCA(t *testing.T) {
+	instance := minimalInstance()
+	instance.Spec.TLS = &v1alpha1.TLSSpec{
+		TrustedCASecretRef: &v1alpha1.CACertSecretRef{Name: "internal-ca-bundle"},
+	}
+
+	cfg, err := BuildConfig(instance)
+	if err != nil {
+		t.Fatalf("BuildConfig() error: %v", err)
+	}
+
+	e, ok := envByName(cfg.CommonEnv, "NODE_EXTRA_CA_CERTS")
+	if !ok {
+		t.Fatal("NODE_EXTRA_CA_CERTS not set")
+	}
+	if e.Value != "/etc/langfuse/tls/trusted-ca/ca.crt" {
+		t.Errorf("NODE_EXTRA_CA_CERTS = %q, want mounted ca path", e.Value)
+	}
+
+	vol, ok := volumeByName(cfg.Volumes, "langfuse-trusted-ca")
+	if !ok {
+		t.Fatal("trusted-ca volume not mounted")
+	}
+	if vol.Secret == nil || vol.Secret.SecretName != "internal-ca-bundle" {
+		t.Errorf("trusted-ca volume secret = %+v, want internal-ca-bundle", vol.Secret)
+	}
+	// The secret key (default ca.crt) must be projected to the fixed ca.crt path.
+	if len(vol.Secret.Items) != 1 || vol.Secret.Items[0].Key != "ca.crt" || vol.Secret.Items[0].Path != "ca.crt" {
+		t.Errorf("trusted-ca items = %+v, want ca.crt->ca.crt", vol.Secret.Items)
+	}
+	m, ok := volumeMountByName(cfg.VolumeMounts, "langfuse-trusted-ca")
+	if !ok || m.MountPath != "/etc/langfuse/tls/trusted-ca" || !m.ReadOnly {
+		t.Errorf("trusted-ca mount = %+v, want read-only at /etc/langfuse/tls/trusted-ca", m)
+	}
+}
+
+func TestBuildConfig_TrustedCA_CustomKey(t *testing.T) {
+	instance := minimalInstance()
+	instance.Spec.TLS = &v1alpha1.TLSSpec{
+		TrustedCASecretRef: &v1alpha1.CACertSecretRef{Name: "bundle", Key: "tls.crt"},
+	}
+	cfg, err := BuildConfig(instance)
+	if err != nil {
+		t.Fatalf("BuildConfig() error: %v", err)
+	}
+	vol, _ := volumeByName(cfg.Volumes, "langfuse-trusted-ca")
+	if len(vol.Secret.Items) != 1 || vol.Secret.Items[0].Key != "tls.crt" || vol.Secret.Items[0].Path != "ca.crt" {
+		t.Errorf("items = %+v, want tls.crt->ca.crt", vol.Secret.Items)
+	}
+}
+
+func TestBuildConfig_RedisTLS_EnabledTrustedCAFallback(t *testing.T) {
+	instance := minimalInstance()
+	instance.Spec.TLS = &v1alpha1.TLSSpec{
+		TrustedCASecretRef: &v1alpha1.CACertSecretRef{Name: "bundle"},
+	}
+	instance.Spec.Redis = &v1alpha1.RedisSpec{
+		External: &v1alpha1.ExternalRedisSpec{
+			SecretRef: v1alpha1.SecretKeysRef{Name: "redis-creds", Keys: map[string]string{"host": "h", "port": "p"}},
+			TLS:       &v1alpha1.RedisTLSSpec{Enabled: true},
+		},
+	}
+
+	cfg, err := BuildConfig(instance)
+	if err != nil {
+		t.Fatalf("BuildConfig() error: %v", err)
+	}
+
+	if e, ok := envByName(cfg.CommonEnv, "REDIS_TLS_ENABLED"); !ok || e.Value != "true" {
+		t.Errorf("REDIS_TLS_ENABLED = %q (found=%v), want true", e.Value, ok)
+	}
+	// With no per-connection CA, Redis must fall back to the trusted-CA path
+	// (ioredis ignores NODE_EXTRA_CA_CERTS).
+	if e, ok := envByName(cfg.CommonEnv, "REDIS_TLS_CA_PATH"); !ok || e.Value != "/etc/langfuse/tls/trusted-ca/ca.crt" {
+		t.Errorf("REDIS_TLS_CA_PATH = %q (found=%v), want trusted-ca path", e.Value, ok)
+	}
+}
+
+func TestBuildConfig_RedisTLS_PerConnectionCAAndMTLS(t *testing.T) {
+	instance := minimalInstance()
+	instance.Spec.Redis = &v1alpha1.RedisSpec{
+		External: &v1alpha1.ExternalRedisSpec{
+			SecretRef: v1alpha1.SecretKeysRef{Name: "redis-creds", Keys: map[string]string{"host": "h", "port": "p"}},
+			TLS: &v1alpha1.RedisTLSSpec{
+				Enabled:             true,
+				CASecretRef:         &v1alpha1.CACertSecretRef{Name: "redis-tls"},
+				ClientCertSecretRef: &v1alpha1.ClientCertSecretRef{Name: "redis-tls"},
+				ServerName:          "redis.internal",
+			},
+		},
+	}
+
+	cfg, err := BuildConfig(instance)
+	if err != nil {
+		t.Fatalf("BuildConfig() error: %v", err)
+	}
+
+	wantEnv := map[string]string{
+		"REDIS_TLS_ENABLED":    "true",
+		"REDIS_TLS_CA_PATH":    "/etc/langfuse/tls/redis-ca/ca.crt",
+		"REDIS_TLS_CERT_PATH":  "/etc/langfuse/tls/redis-client/tls.crt",
+		"REDIS_TLS_KEY_PATH":   "/etc/langfuse/tls/redis-client/tls.key",
+		"REDIS_TLS_SERVERNAME": "redis.internal",
+	}
+	for name, want := range wantEnv {
+		if e, ok := envByName(cfg.CommonEnv, name); !ok || e.Value != want {
+			t.Errorf("%s = %q (found=%v), want %q", name, e.Value, ok, want)
+		}
+	}
+
+	if _, ok := volumeByName(cfg.Volumes, "langfuse-redis-ca"); !ok {
+		t.Error("redis-ca volume not mounted")
+	}
+	cc, ok := volumeByName(cfg.Volumes, "langfuse-redis-client")
+	if !ok {
+		t.Fatal("redis-client volume not mounted")
+	}
+	if len(cc.Secret.Items) != 2 {
+		t.Errorf("redis-client items = %+v, want tls.crt + tls.key", cc.Secret.Items)
+	}
+}
+
+func TestBuildConfig_RedisTLS_CAWithoutEnabledErrors(t *testing.T) {
+	instance := minimalInstance()
+	instance.Spec.Redis = &v1alpha1.RedisSpec{
+		External: &v1alpha1.ExternalRedisSpec{
+			SecretRef: v1alpha1.SecretKeysRef{Name: "redis-creds", Keys: map[string]string{"host": "h", "port": "p"}},
+			TLS: &v1alpha1.RedisTLSSpec{
+				Enabled:     false,
+				CASecretRef: &v1alpha1.CACertSecretRef{Name: "redis-tls"},
+			},
+		},
+	}
+
+	if _, err := BuildConfig(instance); err == nil {
+		t.Fatal("expected error when caSecretRef is set but tls.enabled is false")
+	}
+}
+
+func TestBuildConfig_ClickHouseTLS(t *testing.T) {
+	instance := minimalInstance()
+	instance.Spec.ClickHouse = &v1alpha1.ClickHouseSpec{
+		External: &v1alpha1.ExternalClickHouseSpec{
+			SecretRef: v1alpha1.SecretKeysRef{Name: "ch-creds", Keys: map[string]string{"url": "url"}},
+			TLS:       &v1alpha1.ClickHouseTLSSpec{Enabled: true},
+		},
+	}
+
+	cfg, err := BuildConfig(instance)
+	if err != nil {
+		t.Fatalf("BuildConfig() error: %v", err)
+	}
+
+	if e, ok := envByName(cfg.CommonEnv, "CLICKHOUSE_MIGRATION_SSL"); !ok || e.Value != "true" {
+		t.Errorf("CLICKHOUSE_MIGRATION_SSL = %q (found=%v), want true", e.Value, ok)
+	}
+}
+
+func TestBuildConfig_ClickHouseTLS_DisabledByDefault(t *testing.T) {
+	instance := minimalInstance()
+	instance.Spec.ClickHouse = &v1alpha1.ClickHouseSpec{
+		External: &v1alpha1.ExternalClickHouseSpec{
+			SecretRef: v1alpha1.SecretKeysRef{Name: "ch-creds", Keys: map[string]string{"url": "url"}},
+		},
+	}
+	cfg, err := BuildConfig(instance)
+	if err != nil {
+		t.Fatalf("BuildConfig() error: %v", err)
+	}
+	if _, ok := envByName(cfg.CommonEnv, "CLICKHOUSE_MIGRATION_SSL"); ok {
+		t.Error("CLICKHOUSE_MIGRATION_SSL should not be set without tls block")
+	}
+}
+
+func TestBuildConfig_PostgresTLS_VerifyFull(t *testing.T) {
+	instance := minimalInstance()
+	instance.Spec.Database = &v1alpha1.DatabaseSpec{
+		External: &v1alpha1.ExternalDatabaseSpec{
+			SecretRef: v1alpha1.SecretKeysRef{
+				Name: "db-creds",
+				Keys: map[string]string{"url": "database_url", "directUrl": "direct_url"},
+			},
+			TLS: &v1alpha1.DatabaseTLSSpec{
+				SSLMode:     "verify-full",
+				CASecretRef: &v1alpha1.CACertSecretRef{Name: "pg-tls"},
+			},
+		},
+	}
+
+	cfg, err := BuildConfig(instance)
+	if err != nil {
+		t.Fatalf("BuildConfig() error: %v", err)
+	}
+
+	// Base URL sourced from the secret.
+	base, ok := envByName(cfg.CommonEnv, "DATABASE_URL_BASE")
+	if !ok || base.ValueFrom == nil || base.ValueFrom.SecretKeyRef == nil ||
+		base.ValueFrom.SecretKeyRef.Key != "database_url" {
+		t.Fatalf("DATABASE_URL_BASE should source from secret key database_url, got %+v", base)
+	}
+
+	// Effective URL composed via $(VAR) interpolation with Prisma TLS params.
+	wantQuery := "$(DATABASE_URL_BASE)?sslmode=require&sslaccept=strict&sslcert=/etc/langfuse/tls/postgres-ca/ca.crt"
+	if e, ok := envByName(cfg.CommonEnv, "DATABASE_URL"); !ok || e.Value != wantQuery {
+		t.Errorf("DATABASE_URL = %q, want %q", e.Value, wantQuery)
+	}
+	// DIRECT_URL gets the same treatment.
+	if e, ok := envByName(cfg.CommonEnv, "DIRECT_URL"); !ok ||
+		e.Value != "$(DIRECT_URL_BASE)?sslmode=require&sslaccept=strict&sslcert=/etc/langfuse/tls/postgres-ca/ca.crt" {
+		t.Errorf("DIRECT_URL = %q, want composed with TLS params", e.Value)
+	}
+
+	// DATABASE_URL_BASE must appear before DATABASE_URL so $(VAR) resolves.
+	baseIdx, urlIdx := -1, -1
+	for i, e := range cfg.CommonEnv {
+		switch e.Name {
+		case "DATABASE_URL_BASE":
+			baseIdx = i
+		case "DATABASE_URL":
+			urlIdx = i
+		}
+	}
+	if baseIdx == -1 || urlIdx == -1 || baseIdx > urlIdx {
+		t.Errorf("DATABASE_URL_BASE (idx %d) must precede DATABASE_URL (idx %d)", baseIdx, urlIdx)
+	}
+
+	if _, ok := volumeByName(cfg.Volumes, "langfuse-postgres-ca"); !ok {
+		t.Error("postgres-ca volume not mounted")
+	}
+}
+
+func TestBuildConfig_PostgresTLS_RequireUsesTrustedCA(t *testing.T) {
+	instance := minimalInstance()
+	instance.Spec.TLS = &v1alpha1.TLSSpec{
+		TrustedCASecretRef: &v1alpha1.CACertSecretRef{Name: "bundle"},
+	}
+	instance.Spec.Database = &v1alpha1.DatabaseSpec{
+		External: &v1alpha1.ExternalDatabaseSpec{
+			SecretRef: v1alpha1.SecretKeysRef{Name: "db-creds", Keys: map[string]string{"url": "database_url"}},
+			TLS:       &v1alpha1.DatabaseTLSSpec{SSLMode: "require"},
+		},
+	}
+
+	cfg, err := BuildConfig(instance)
+	if err != nil {
+		t.Fatalf("BuildConfig() error: %v", err)
+	}
+
+	want := "$(DATABASE_URL_BASE)?sslmode=require&sslaccept=accept_invalid_certs&sslcert=/etc/langfuse/tls/trusted-ca/ca.crt"
+	if e, ok := envByName(cfg.CommonEnv, "DATABASE_URL"); !ok || e.Value != want {
+		t.Errorf("DATABASE_URL = %q, want %q", e.Value, want)
+	}
+}
+
+func TestBuildConfig_PostgresTLS_Disable(t *testing.T) {
+	instance := minimalInstance()
+	instance.Spec.Database = &v1alpha1.DatabaseSpec{
+		External: &v1alpha1.ExternalDatabaseSpec{
+			SecretRef: v1alpha1.SecretKeysRef{Name: "db-creds", Keys: map[string]string{"url": "database_url"}},
+			TLS:       &v1alpha1.DatabaseTLSSpec{SSLMode: "disable"},
+		},
+	}
+
+	cfg, err := BuildConfig(instance)
+	if err != nil {
+		t.Fatalf("BuildConfig() error: %v", err)
+	}
+	if e, ok := envByName(cfg.CommonEnv, "DATABASE_URL"); !ok || e.Value != "$(DATABASE_URL_BASE)?sslmode=disable" {
+		t.Errorf("DATABASE_URL = %q, want sslmode=disable", e.Value)
+	}
+}
+
+func TestBuildConfig_ExternalDatabase_NoTLSUnchanged(t *testing.T) {
+	// Without a tls block the legacy direct DATABASE_URL secret ref is preserved.
+	instance := minimalInstance()
+	instance.Spec.Database = &v1alpha1.DatabaseSpec{
+		External: &v1alpha1.ExternalDatabaseSpec{
+			SecretRef: v1alpha1.SecretKeysRef{Name: "db-creds", Keys: map[string]string{"url": "database_url"}},
+		},
+	}
+	cfg, err := BuildConfig(instance)
+	if err != nil {
+		t.Fatalf("BuildConfig() error: %v", err)
+	}
+	e, ok := envByName(cfg.CommonEnv, "DATABASE_URL")
+	if !ok || e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil {
+		t.Fatalf("DATABASE_URL should be a direct secret ref, got %+v", e)
+	}
+	if _, ok := envByName(cfg.CommonEnv, "DATABASE_URL_BASE"); ok {
+		t.Error("DATABASE_URL_BASE should not be emitted without a tls block")
+	}
+}
+
 func TestBuildConfig_CNPG(t *testing.T) {
 	instance := minimalInstance()
 	instance.Spec.Database = &v1alpha1.DatabaseSpec{

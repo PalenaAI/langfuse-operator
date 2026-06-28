@@ -44,7 +44,32 @@ When using managed mode with no explicit auth secret, the operator auto-generate
 
 ## TLS
 
-For external Redis with TLS enabled, set the `tls` key in your Secret to `"true"`:
+Use the typed `redis.external.tls` block to connect over TLS, point the client at
+a custom CA, and optionally enable mutual TLS:
+
+```yaml
+spec:
+  redis:
+    external:
+      secretRef:
+        name: langfuse-redis
+        keys: { host: host, port: port, password: password }
+      tls:
+        enabled: true
+        # caSecretRef omitted → uses spec.tls.trustedCASecretRef
+        clientCertSecretRef:        # optional, mutual TLS
+          name: langfuse-redis-tls
+        serverName: redis.example.com   # optional SNI override
+```
+
+See [Datastore TLS](./datastore-tls) for the full picture, including the trusted
+CA bundle and PostgreSQL/ClickHouse. Note that Langfuse's Redis client reads the
+CA from `REDIS_TLS_CA_PATH`, not the Node trust store, so the operator always
+sets that path for you.
+
+::: details Legacy: boolean `tls` key in the Secret
+Before the typed block existed, TLS was toggled by a `tls` key in the connection
+Secret. This still works when no `tls` block is present:
 
 ```bash
 kubectl create secret generic langfuse-redis -n langfuse \
@@ -53,3 +78,14 @@ kubectl create secret generic langfuse-redis -n langfuse \
   --from-literal=password="secret" \
   --from-literal=tls_enabled="true"
 ```
+
+```yaml
+spec:
+  redis:
+    external:
+      secretRef:
+        name: langfuse-redis
+        keys: { host: host, port: port, password: password, tls: tls_enabled }
+```
+
+:::

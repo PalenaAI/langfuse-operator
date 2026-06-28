@@ -38,10 +38,13 @@ func BuildWorkerDeployment(instance *v1alpha1.LangfuseInstance, config *langfuse
 	envVars := mergeEnv(config.CommonEnv, config.WorkerEnv, instance.Spec.Worker.ExtraEnv)
 
 	container := corev1.Container{
-		Name:      "langfuse-worker",
-		Image:     workerContainerImage(instance),
-		Env:       envVars,
-		Resources: resourceRequirements(instance.Spec.Worker.Resources),
+		Name:  "langfuse-worker",
+		Image: workerContainerImage(instance),
+		Env:   envVars,
+		// The Worker does most of the Redis/ClickHouse work, so it must receive
+		// the same datastore-TLS mounts as the Web component.
+		VolumeMounts: mergeVolumeMounts(config.VolumeMounts, instance.Spec.Worker.ExtraVolumeMounts),
+		Resources:    resourceRequirements(instance.Spec.Worker.Resources),
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				Exec: &corev1.ExecAction{
@@ -60,6 +63,7 @@ func BuildWorkerDeployment(instance *v1alpha1.LangfuseInstance, config *langfuse
 
 	podSpec := corev1.PodSpec{
 		Containers:   []corev1.Container{container},
+		Volumes:      mergeVolumes(config.Volumes, instance.Spec.Worker.ExtraVolumes),
 		NodeSelector: instance.Spec.Worker.NodeSelector,
 		Tolerations:  instance.Spec.Worker.Tolerations,
 		Affinity:     instance.Spec.Worker.Affinity,

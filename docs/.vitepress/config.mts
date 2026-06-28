@@ -46,6 +46,7 @@ export default defineConfig({
             { text: 'ClickHouse', link: '/guide/clickhouse' },
             { text: 'Redis', link: '/guide/redis' },
             { text: 'Blob Storage', link: '/guide/blob-storage' },
+            { text: 'Datastore TLS', link: '/guide/datastore-tls' },
             { text: 'Authentication', link: '/guide/authentication' },
             { text: 'Networking', link: '/guide/networking' },
             { text: 'Observability', link: '/guide/observability' },

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-28
+
 ### Added
 
 - **Datastore TLS — encrypt Langfuse's connections to PostgreSQL, ClickHouse, and Redis.** New TLS configuration that applies to **both** the Web and Worker components (and the migration Job), so encryption holds across the whole data plane — the Worker does most of the Redis/ClickHouse work. See [docs/guide/datastore-tls.md](docs/guide/datastore-tls.md).

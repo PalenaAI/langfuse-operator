@@ -112,13 +112,14 @@ func (r *CircuitBreakerController) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// 4. Check each component
 	type componentCheck struct {
-		name string
-		spec *v1alpha1.ComponentCircuitBreakerSpec
+		name  string
+		spec  *v1alpha1.ComponentCircuitBreakerSpec
+		probe func(context.Context, client.Client, *v1alpha1.LangfuseInstance) probeResult
 	}
 	components := []componentCheck{
-		{name: "clickhouse", spec: cb.ClickHouse},
-		{name: "redis", spec: cb.Redis},
-		{name: "database", spec: cb.Database},
+		{name: "clickhouse", spec: cb.ClickHouse, probe: probeClickHouse},
+		{name: "redis", spec: cb.Redis, probe: probeRedis},
+		{name: "database", spec: cb.Database, probe: probeDatabase},
 	}
 
 	statusChanged := false
@@ -140,13 +141,15 @@ func (r *CircuitBreakerController) Reconcile(ctx context.Context, req ctrl.Reque
 			threshold = defaultFailureThreshold
 		}
 
-		// TODO: Perform actual health probe against the component.
-		// For now, assume success (healthy). When the connection infrastructure
-		// is implemented, this will make HTTP/TCP probes against each dependency.
-		probeSuccess := true
+		// Probe the dependency for real. This previously returned a hardcoded
+		// success, which meant every configured action, threshold, and interval
+		// was inert while the CR still published AllDependenciesHealthy.
+		result := comp.probe(ctx, r.Client, instance)
+		probeSuccess := result.Connected
 		log.V(1).Info("circuit breaker probe",
 			"component", comp.name,
 			"healthy", probeSuccess,
+			"reason", result.Reason,
 			"failureCount", r.failureCounts[instanceKey][comp.name],
 			"threshold", threshold,
 		)

@@ -12,6 +12,7 @@ package controller
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -114,7 +115,17 @@ func probeClickHouse(ctx context.Context, c client.Client, instance *v1alpha1.La
 	if err != nil {
 		return probeResult{Reason: "ConfigError", Message: fmt.Sprintf("Cannot resolve ClickHouse URL: %v", err)}
 	}
-	return httpProbe(ctx, endpoint+"/ping", "ClickHouse")
+
+	// An HTTPS endpoint secured by a private CA would fail x509 verification
+	// against the system trust store, so trust the instance's configured CA.
+	var tlsConfig *tls.Config
+	if strings.HasPrefix(endpoint, "https://") {
+		tlsConfig, err = instanceTLSConfig(ctx, c, instance)
+		if err != nil {
+			return probeResult{Reason: "ConfigError", Message: fmt.Sprintf("Cannot build ClickHouse TLS config: %v", err)}
+		}
+	}
+	return httpProbeTLS(ctx, endpoint+"/ping", "ClickHouse", tlsConfig)
 }
 
 func resolveClickHouseURL(ctx context.Context, c client.Client, instance *v1alpha1.LangfuseInstance) (string, error) {
@@ -291,9 +302,16 @@ func tcpProbe(ctx context.Context, host, port, label string) probeResult {
 	return probeResult{Connected: true, Reason: "Connected", Message: fmt.Sprintf("%s is reachable", label)}
 }
 
-// httpProbe issues a GET against the URL with probeTimeout. Returns Connected
-// for any 2xx response (or 200 + a body matching ClickHouse's "Ok." for /ping).
+// httpProbe issues a GET against the URL with probeTimeout, using the system
+// trust store for TLS.
 func httpProbe(ctx context.Context, target, label string) probeResult {
+	return httpProbeTLS(ctx, target, label, nil)
+}
+
+// httpProbeTLS issues a GET against the URL with probeTimeout. Returns
+// Connected for any 2xx response. A non-nil tlsConfig overrides the trust store,
+// which is required for endpoints secured by a private CA.
+func httpProbeTLS(ctx context.Context, target, label string, tlsConfig *tls.Config) probeResult {
 	reqCtx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, target, nil)
@@ -301,6 +319,9 @@ func httpProbe(ctx context.Context, target, label string) probeResult {
 		return probeResult{Reason: "ConfigError", Message: fmt.Sprintf("Cannot build request: %v", err)}
 	}
 	httpClient := &http.Client{Timeout: probeTimeout}
+	if tlsConfig != nil {
+		httpClient.Transport = &http.Transport{TLSClientConfig: tlsConfig}
+	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return probeResult{Reason: "Unreachable", Message: fmt.Sprintf("%s request failed: %v", label, err)}

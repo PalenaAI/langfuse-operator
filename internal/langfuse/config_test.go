@@ -1043,3 +1043,42 @@ func TestBuildConfig_CNPG(t *testing.T) {
 		t.Error("DATABASE_URL not found in CommonEnv")
 	}
 }
+
+// spec.database.managed never deployed PostgreSQL and pointed DATABASE_URL at a
+// Secret key nothing generates, so it could only ever produce pods stuck in
+// CreateContainerConfigError. It must now fail loudly at config time instead.
+func TestBuildConfig_ManagedDatabaseRejected(t *testing.T) {
+	instance := minimalInstance()
+	instance.Spec.Database = &v1alpha1.DatabaseSpec{
+		Managed: &v1alpha1.ManagedDatabaseSpec{},
+	}
+
+	_, err := BuildConfig(instance)
+	if err == nil {
+		t.Fatal("expected spec.database.managed to be rejected")
+	}
+	for _, want := range []string{"not implemented", "cloudnativepg", "external"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q should mention %q", err, want)
+		}
+	}
+}
+
+func TestBuildConfig_CNPGAndExternalStillAccepted(t *testing.T) {
+	for name, db := range map[string]*v1alpha1.DatabaseSpec{
+		"cloudnativepg": {CloudNativePG: &v1alpha1.CloudNativePGSpec{
+			ClusterRef: v1alpha1.ObjectReference{Name: "pg"},
+		}},
+		"external": {External: &v1alpha1.ExternalDatabaseSpec{
+			SecretRef: v1alpha1.SecretKeysRef{Name: "db", Keys: map[string]string{"url": "database_url"}},
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			instance := minimalInstance()
+			instance.Spec.Database = db
+			if _, err := BuildConfig(instance); err != nil {
+				t.Errorf("BuildConfig() error: %v", err)
+			}
+		})
+	}
+}

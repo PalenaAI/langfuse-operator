@@ -77,7 +77,9 @@ func BuildConfig(instance *v1alpha1.LangfuseInstance) (*Config, error) {
 	trustedCAPath := addTrustedCAEnv(cfg, instance)
 
 	// ─── Database ─────────────────────────────────────────────
-	addDatabaseEnv(cfg, instance, trustedCAPath)
+	if err := addDatabaseEnv(cfg, instance, trustedCAPath); err != nil {
+		return nil, err
+	}
 
 	// ─── ClickHouse ───────────────────────────────────────────
 	addClickHouseEnv(cfg, instance)
@@ -272,22 +274,27 @@ func addTrustedCAEnv(cfg *Config, instance *v1alpha1.LangfuseInstance) string {
 	return caPath
 }
 
-func addDatabaseEnv(cfg *Config, instance *v1alpha1.LangfuseInstance, trustedCAPath string) {
+func addDatabaseEnv(cfg *Config, instance *v1alpha1.LangfuseInstance, trustedCAPath string) error {
 	if instance.Spec.Database == nil {
-		return
+		return nil
 	}
 
 	db := instance.Spec.Database
 	switch {
+	case db.Managed != nil:
+		// Rejected rather than silently accepted: the operator never created a
+		// PostgreSQL instance for this mode and pointed DATABASE_URL at a Secret
+		// key nothing generates, so the only possible outcome was pods stuck in
+		// CreateContainerConfigError. Failing here surfaces the real problem as
+		// a ConfigError condition instead. Removed in 0.11.0.
+		return fmt.Errorf("spec.database.managed is not implemented and is deprecated " +
+			"(removed in 0.11.0): the operator does not deploy PostgreSQL in this mode. " +
+			"Use spec.database.cloudnativepg or spec.database.external")
 	case db.CloudNativePG != nil:
 		// CNPG stores credentials in <cluster>-app secret with keys: uri, host, port, dbname, user, password
 		clusterName := db.CloudNativePG.ClusterRef.Name
 		secretName := clusterName + "-app"
 		cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("DATABASE_URL", secretName, "uri"))
-	case db.Managed != nil:
-		// Managed DB — the operator will create the secret in Phase 2
-		cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("DATABASE_URL",
-			generatedSecretName(instance), "database-url"))
 	case db.External != nil:
 		urlKey := db.External.SecretRef.Keys["url"]
 		if urlKey == "" {
@@ -304,7 +311,7 @@ func addDatabaseEnv(cfg *Config, instance *v1alpha1.LangfuseInstance, trustedCAP
 				cfg.CommonEnv = append(cfg.CommonEnv, envFromSecret("DIRECT_URL",
 					db.External.SecretRef.Name, directKey))
 			}
-			return
+			return nil
 		}
 
 		// TLS: the URL lives in a Secret, so we can't append to it directly.
@@ -322,6 +329,7 @@ func addDatabaseEnv(cfg *Config, instance *v1alpha1.LangfuseInstance, trustedCAP
 			cfg.CommonEnv = append(cfg.CommonEnv, envVar("DIRECT_URL", "$(DIRECT_URL_BASE)"+query))
 		}
 	}
+	return nil
 }
 
 // postgresTLSQuery builds the Prisma TLS query string ("?sslmode=…&…") for the

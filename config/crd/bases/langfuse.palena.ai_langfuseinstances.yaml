@@ -496,8 +496,14 @@ spec:
                     - secretRef
                     type: object
                   managed:
-                    description: Managed deploys a ClickHouse instance via the ClickHouse
-                      Operator.
+                    description: |-
+                      Managed deploys a single-node ClickHouse StatefulSet.
+
+                      Deprecated: dev/CI only, and will be removed in 0.11.0. It is a plain
+                      single-node StatefulSet with no replication, no Keeper, and no backups;
+                      shards is ignored and replicas > 1 produces independent nodes behind one
+                      Service rather than a cluster. Use external with ClickHouse Cloud or the
+                      Altinity ClickHouse Operator instead.
                     properties:
                       auth:
                         description: Auth references or auto-generates ClickHouse
@@ -744,8 +750,14 @@ spec:
                     - secretRef
                     type: object
                   managed:
-                    description: Managed deploys a PostgreSQL instance managed by
-                      the operator.
+                    description: |-
+                      Managed deploys a PostgreSQL instance managed by the operator.
+
+                      Deprecated: NOT IMPLEMENTED and rejected since 0.10.0; it will be removed
+                      in 0.11.0. The operator never created a PostgreSQL instance for this mode,
+                      so it could only ever produce pods that fail with CreateContainerConfigError.
+                      Use cloudnativepg (operator-managed HA PostgreSQL via CloudNativePG) or
+                      external instead.
                     properties:
                       backup:
                         description: Backup configures automated backups.
@@ -1081,7 +1093,13 @@ spec:
                     - secretRef
                     type: object
                   managed:
-                    description: Managed deploys a Redis instance managed by the operator.
+                    description: |-
+                      Managed deploys a single-pod Redis StatefulSet.
+
+                      Deprecated: dev/CI only, and will be removed in 0.11.0. It is a single pod
+                      with no Sentinel, no Cluster, and no backups; the replicas field is
+                      ignored. Use external with a managed Redis service or a dedicated Redis
+                      operator instead.
                     properties:
                       replicas:
                         default: 1

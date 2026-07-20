@@ -49,12 +49,14 @@ postgresql://user:password@host:5432/langfuse?sslmode=require
 
 The optional `directUrl` key is used for operations that need to bypass connection poolers like PgBouncer (e.g., migrations).
 
-## Managed
+## Managed (deprecated)
 
-::: danger Not implemented
-Managed Postgres is reserved in the CRD schema but **not implemented** in the current release. Setting `database.managed` will wire `DATABASE_URL` to a Secret the operator does not create — Langfuse will fail to start. Use `cloudnativepg` or `external` instead.
+::: danger Rejected since 0.10.0, removed in 0.11.0
+`database.managed` was never implemented — the operator does not deploy PostgreSQL in this mode, and it wired `DATABASE_URL` to a Secret key nothing creates, so the pods could only fail with `CreateContainerConfigError`.
 
-The `instances`, `storageSize`, `storageClass`, and `backup` fields are accepted by validation but ignored at reconcile time. They will be honored once managed Postgres ships (no committed timeline).
+Since **0.10.0** the operator rejects it outright with a `Ready=False` / `ConfigError` condition rather than producing broken pods. It is removed entirely in **0.11.0**.
+
+Use [`cloudnativepg`](#cloudnativepg) for an operator-managed HA PostgreSQL, or [`external`](#external) for a managed service.
 :::
 
 ## Migrations

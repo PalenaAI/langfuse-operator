@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -88,30 +89,60 @@ func (r *SchemaDriftController) Reconcile(ctx context.Context, req ctrl.Request)
 
 	schemaDrift := instance.Spec.ClickHouse.SchemaDrift
 
-	// 4. Perform schema drift check
-	// TODO: Query ClickHouse system.columns table and compare against expected schema.
-	// The expected schema for Langfuse tables (traces, observations, scores, events)
-	// will be derived from the running Langfuse version. For now, log the intent and
-	// set a condition indicating the check was attempted.
-	log.Info("schema drift check triggered",
+	// 4. Perform the schema drift check against ClickHouse.
+	log.V(1).Info("running schema drift check",
 		"instance", instance.Name,
 		"autoRepair", schemaDrift.AutoRepair,
 		"checkInterval", checkInterval,
 	)
 
-	// No drift detected (since we can't actually query yet)
 	if instance.Status.ClickHouse == nil {
 		instance.Status.ClickHouse = &v1alpha1.ClickHouseStatus{}
 	}
-	instance.Status.ClickHouse.SchemaDrift = false
 
-	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
-		Type:               "SchemaDriftChecked",
-		Status:             metav1.ConditionTrue,
-		Reason:             "CheckCompleted",
-		Message:            fmt.Sprintf("Schema drift check completed (autoRepair=%t, next check in %dm)", schemaDrift.AutoRepair, checkInterval),
-		ObservedGeneration: instance.Generation,
-	})
+	missing, err := r.findMissingTables(ctx, instance)
+	switch {
+	case err != nil:
+		// Unknown, not "no drift" — the check previously reported success
+		// without ever querying ClickHouse.
+		log.Error(err, "schema drift check failed")
+		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+			Type:               "SchemaDriftChecked",
+			Status:             metav1.ConditionUnknown,
+			Reason:             "CheckFailed",
+			Message:            fmt.Sprintf("Cannot inspect ClickHouse schema: %v", err),
+			ObservedGeneration: instance.Generation,
+		})
+
+	case len(missing) > 0:
+		instance.Status.ClickHouse.SchemaDrift = true
+		// autoRepair is deliberately not acted on: recreating Langfuse's tables
+		// belongs to its own migrations, and a wrong DDL here would corrupt the
+		// schema. Missing tables almost always mean migrations have not run.
+		repairNote := ""
+		if schemaDrift.AutoRepair {
+			repairNote = " autoRepair cannot fix this — Langfuse owns its schema; check that migrations completed."
+		}
+		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+			Type:   "SchemaDriftChecked",
+			Status: metav1.ConditionFalse,
+			Reason: "TablesMissing",
+			Message: fmt.Sprintf("Expected Langfuse tables missing from ClickHouse database %q: %s.%s",
+				defaultClickHouseDatabase, strings.Join(missing, ", "), repairNote),
+			ObservedGeneration: instance.Generation,
+		})
+
+	default:
+		instance.Status.ClickHouse.SchemaDrift = false
+		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+			Type:   "SchemaDriftChecked",
+			Status: metav1.ConditionTrue,
+			Reason: "NoDriftDetected",
+			Message: fmt.Sprintf("All %d expected Langfuse tables present in database %q (next check in %dm)",
+				len(expectedClickHouseTables), defaultClickHouseDatabase, checkInterval),
+			ObservedGeneration: instance.Generation,
+		})
+	}
 
 	if err := r.Status().Update(ctx, instance); err != nil {
 		return ctrl.Result{}, fmt.Errorf("updating schema drift status: %w", err)
@@ -119,6 +150,48 @@ func (r *SchemaDriftController) Reconcile(ctx context.Context, req ctrl.Request)
 
 	log.Info("reconciled schema drift detection", "instance", instance.Name, "requeueAfter", requeueAfter)
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
+}
+
+// expectedClickHouseTables are the core tables Langfuse's ClickHouse migrations
+// create. Their absence is the drift that actually matters in practice — it
+// means migrations never ran, ran against a different database, or the schema
+// was partially dropped.
+//
+// The check is deliberately table-level, not column-level: Langfuse owns its
+// schema and changes it between versions, so an operator-side column manifest
+// would produce false drift on every upgrade.
+var expectedClickHouseTables = []string{
+	"traces",
+	"observations",
+	"scores",
+	"schema_migrations",
+}
+
+// findMissingTables returns the expected tables absent from ClickHouse.
+func (r *SchemaDriftController) findMissingTables(ctx context.Context, instance *v1alpha1.LangfuseInstance) ([]string, error) {
+	ch, err := newClickHouseClient(ctx, r.Client, instance)
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := ch.queryRows(ctx, fmt.Sprintf(
+		"SELECT name FROM system.tables WHERE database = '%s'", defaultClickHouseDatabase))
+	if err != nil {
+		return nil, err
+	}
+
+	present := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		present[strings.TrimSpace(row)] = true
+	}
+
+	var missing []string
+	for _, table := range expectedClickHouseTables {
+		if !present[table] {
+			missing = append(missing, table)
+		}
+	}
+	return missing, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

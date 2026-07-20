@@ -146,6 +146,6 @@ spec:
 
 ## Next Steps
 
-- [Database](/guide/database) &mdash; configure PostgreSQL with CNPG or managed mode
+- [Database](/guide/database) &mdash; configure PostgreSQL with CloudNativePG or an external service
 - [Authentication](/guide/authentication) &mdash; set up OIDC or initial admin user
 - [Multi-Tenancy](/guide/multi-tenancy) &mdash; manage organizations and projects via CRDs

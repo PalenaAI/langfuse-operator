@@ -53,6 +53,10 @@ const (
 	// conditionTypeReady is the status condition type set on every CR in
 	// this group; centralising the literal avoids drift across reconcilers.
 	conditionTypeReady = "Ready"
+
+	// conditionTypeDeprecated warns that the spec uses fields scheduled for
+	// removal, so users find out from the CR rather than from a failed upgrade.
+	conditionTypeDeprecated = "Deprecated"
 )
 
 // LangfuseInstanceReconciler reconciles a LangfuseInstance object
@@ -124,6 +128,10 @@ func (r *LangfuseInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		}
 		return ctrl.Result{}, fmt.Errorf("building config: %w", err)
 	}
+
+	// 3z. Warn about deprecated spec fields. Purely informational — it must not
+	// block reconciliation, since these modes still work until 0.11.0.
+	setDeprecationCondition(ctx, instance)
 
 	// 3a. Reconcile managed ClickHouse
 	if instance.Spec.ClickHouse != nil && instance.Spec.ClickHouse.Managed != nil {
@@ -376,6 +384,42 @@ func (r *LangfuseInstanceReconciler) updateStatus(ctx context.Context, instance 
 	})
 
 	return r.Status().Update(ctx, instance)
+}
+
+// setDeprecationCondition flags spec fields scheduled for removal. Managed
+// datastore modes are dev/CI only and go away in 0.11.0; surfacing that on the
+// CR (and in the log) gives users a release to migrate instead of discovering
+// it when an upgrade rejects their spec.
+//
+// spec.database.managed is deliberately absent here — it is rejected outright
+// in langfuse.BuildConfig, which reports a ConfigError condition instead.
+func setDeprecationCondition(ctx context.Context, instance *v1alpha1.LangfuseInstance) {
+	var deprecated []string
+	if instance.Spec.ClickHouse != nil && instance.Spec.ClickHouse.Managed != nil {
+		deprecated = append(deprecated, "spec.clickhouse.managed (use external: ClickHouse Cloud or the Altinity operator)")
+	}
+	if instance.Spec.Redis != nil && instance.Spec.Redis.Managed != nil {
+		deprecated = append(deprecated, "spec.redis.managed (use external: a managed Redis service or a Redis operator)")
+	}
+
+	if len(deprecated) == 0 {
+		meta.RemoveStatusCondition(&instance.Status.Conditions, conditionTypeDeprecated)
+		return
+	}
+
+	message := fmt.Sprintf("Deprecated fields in use, removal in 0.11.0: %s. "+
+		"These modes are single-node with no replication or backups and are unsuitable for production.",
+		strings.Join(deprecated, "; "))
+
+	logf.FromContext(ctx).Info("WARNING: deprecated spec fields in use", "fields", deprecated)
+
+	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               conditionTypeDeprecated,
+		Status:             metav1.ConditionTrue,
+		Reason:             "ManagedDatastoresDeprecated",
+		Message:            message,
+		ObservedGeneration: instance.Generation,
+	})
 }
 
 // podIssuesFor returns pod-level problems for a component, but only when the

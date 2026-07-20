@@ -42,6 +42,13 @@ linters:
           - dupl
           - lll
         path: internal/*
+      # The managed datastore modes carry Go "Deprecated:" markers so consumers
+      # of the API types see them, but the operator must keep reading those
+      # fields until they are removed in 0.11.0. Matched on our own deprecation
+      # wording so third-party SA1019 warnings still surface.
+      - linters:
+          - staticcheck
+        text: "SA1019: .*(deprecated: NOT IMPLEMENTED|deprecated: dev/CI only)"
     paths:
       - third_party$
       - builtin$

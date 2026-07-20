@@ -33,7 +33,13 @@ For single-node ClickHouse deployments, the operator automatically sets `CLICKHO
 
 ## Managed
 
-::: danger Dev / preview only
+::: danger Deprecated — removed in 0.11.0
+Managed ClickHouse is **deprecated since 0.10.0** and will be **removed in 0.11.0**. An instance using it reports a `Deprecated` status condition.
+
+Migrate to `external`, backed by [ClickHouse Cloud](https://clickhouse.com/cloud), [Altinity.Cloud](https://altinity.com/cloud-database/), Aiven, or a cluster you run with the [Altinity ClickHouse Operator](https://github.com/Altinity/clickhouse-operator).
+:::
+
+::: warning Dev / CI only
 Managed mode deploys a **plain single-node ClickHouse StatefulSet**, not a clustered deployment via the Altinity ClickHouse Operator. `CLICKHOUSE_CLUSTER_ENABLED=false` is forced — no ZooKeeper/Keeper, no `ReplicatedMergeTree`, no `ON CLUSTER` DDL. The operator does not take backups or snapshots. Suitable for local development, evaluation, and CI; **not for production**.
 
 The `shards` field is ignored. Setting `replicas > 1` creates N independent pods that do not replicate data — do not use.

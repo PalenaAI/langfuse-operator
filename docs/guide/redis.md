@@ -25,7 +25,13 @@ spec:
 
 ## Managed
 
-::: danger Dev / preview only
+::: danger Deprecated — removed in 0.11.0
+Managed Redis is **deprecated since 0.10.0** and will be **removed in 0.11.0**. An instance using it reports a `Deprecated` status condition.
+
+Migrate to `external`, backed by a managed service (ElastiCache, Memorystore, Aiven, Upstash, Redis Enterprise) or a cluster run by a dedicated Redis operator such as [spotahome/redis-operator](https://github.com/spotahome/redis-operator) or [OT-CONTAINER-KIT/redis-operator](https://github.com/OT-CONTAINER-KIT/redis-operator).
+:::
+
+::: warning Dev / CI only
 Managed Redis is a **single-pod StatefulSet** (`replicas: 1`, hardcoded) with AOF persistence on a PVC. No Sentinel, no Cluster, no replication, no backups. On node failure the pod must reschedule and remount its volume before Langfuse can resume. Suitable for local development and CI; **not for production**.
 
 The `replicas` field on `redis.managed` is currently ignored.

@@ -400,6 +400,12 @@ type DatabaseSpec struct {
 	// +optional
 	CloudNativePG *CloudNativePGSpec `json:"cloudnativepg,omitempty"`
 	// Managed deploys a PostgreSQL instance managed by the operator.
+	//
+	// Deprecated: NOT IMPLEMENTED and rejected since 0.10.0; it will be removed
+	// in 0.11.0. The operator never created a PostgreSQL instance for this mode,
+	// so it could only ever produce pods that fail with CreateContainerConfigError.
+	// Use cloudnativepg (operator-managed HA PostgreSQL via CloudNativePG) or
+	// external instead.
 	// +optional
 	Managed *ManagedDatabaseSpec `json:"managed,omitempty"`
 	// External references an external PostgreSQL instance.
@@ -517,7 +523,13 @@ type BackgroundMigrationSpec struct {
 // ClickHouseSpec defines ClickHouse configuration.
 // Exactly one of Managed or External must be set.
 type ClickHouseSpec struct {
-	// Managed deploys a ClickHouse instance via the ClickHouse Operator.
+	// Managed deploys a single-node ClickHouse StatefulSet.
+	//
+	// Deprecated: dev/CI only, and will be removed in 0.11.0. It is a plain
+	// single-node StatefulSet with no replication, no Keeper, and no backups;
+	// shards is ignored and replicas > 1 produces independent nodes behind one
+	// Service rather than a cluster. Use external with ClickHouse Cloud or the
+	// Altinity ClickHouse Operator instead.
 	// +optional
 	Managed *ManagedClickHouseSpec `json:"managed,omitempty"`
 	// External references an external ClickHouse instance.
@@ -678,7 +690,12 @@ type SchemaDriftSpec struct {
 // RedisSpec defines Redis/Valkey configuration.
 // Exactly one of Managed or External must be set.
 type RedisSpec struct {
-	// Managed deploys a Redis instance managed by the operator.
+	// Managed deploys a single-pod Redis StatefulSet.
+	//
+	// Deprecated: dev/CI only, and will be removed in 0.11.0. It is a single pod
+	// with no Sentinel, no Cluster, and no backups; the replicas field is
+	// ignored. Use external with a managed Redis service or a dedicated Redis
+	// operator instead.
 	// +optional
 	Managed *ManagedRedisSpec `json:"managed,omitempty"`
 	// External references an external Redis instance.

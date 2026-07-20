@@ -58,6 +58,7 @@ export default defineConfig({
             { text: 'Upgrades', link: '/guide/upgrades' },
             { text: 'Secret Management', link: '/guide/secrets' },
             { text: 'Multi-Tenancy', link: '/guide/multi-tenancy' },
+            { text: 'Troubleshooting', link: '/guide/troubleshooting' },
           ],
         },
       ],

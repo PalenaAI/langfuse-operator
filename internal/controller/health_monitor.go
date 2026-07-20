@@ -58,6 +58,7 @@ type HealthMonitorReconciler struct {
 // +kubebuilder:rbac:groups=langfuse.palena.ai,resources=langfuseinstances,verbs=get;list;watch
 // +kubebuilder:rbac:groups=langfuse.palena.ai,resources=langfuseinstances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
 
 func (r *HealthMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -78,10 +79,13 @@ func (r *HealthMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	}
 
-	// 2. Skip health checks if instance is not in Running or Degraded phase.
-	if instance.Status.Phase != phaseRunning && instance.Status.Phase != phaseDegraded {
-		log.V(1).Info("skipping health check, instance not in Running or Degraded phase",
-			"phase", instance.Status.Phase)
+	// 2. Skip dependency probes while a migration is running — the stores are
+	// intentionally in flux and the migration controller owns the phase.
+	// Pending is deliberately NOT skipped: a first rollout that never comes up
+	// (bad image, missing Secret key) sits in Pending forever, and that is
+	// exactly when the user needs the pod-level diagnosis below.
+	if instance.Status.Phase == phaseMigrating {
+		log.V(1).Info("skipping health check during migration", "phase", instance.Status.Phase)
 		return ctrl.Result{RequeueAfter: healthCheckInterval}, nil
 	}
 
@@ -199,104 +203,85 @@ func conditionFromProbe(conditionType string, res probeResult, gen int64) metav1
 	}
 }
 
-// checkWebDeployment evaluates Web component health from deployment readiness.
+// checkWebDeployment evaluates Web component health from deployment readiness,
+// falling back to pod-level diagnosis when replicas are not ready.
 func (r *HealthMonitorReconciler) checkWebDeployment(ctx context.Context, instance *v1alpha1.LangfuseInstance) metav1.Condition {
-	log := logf.FromContext(ctx)
-
-	deploy := &appsv1.Deployment{}
-	err := r.Get(ctx, client.ObjectKey{
-		Name:      resources.WebName(instance),
-		Namespace: instance.Namespace,
-	}, deploy)
-
-	if apierrors.IsNotFound(err) {
-		log.V(1).Info("web deployment not found")
-		return metav1.Condition{
-			Type:               conditionWebReady,
-			Status:             metav1.ConditionFalse,
-			Reason:             "DeploymentNotFound",
-			Message:            "Web deployment does not exist",
-			ObservedGeneration: instance.Generation,
-		}
+	condition, issues := r.checkComponentDeployment(ctx, instance,
+		componentWeb, resources.WebName(instance), conditionWebReady)
+	if instance.Status.Web == nil {
+		instance.Status.Web = &v1alpha1.ComponentStatus{}
 	}
-	if err != nil {
-		log.Error(err, "failed to get web deployment")
-		return metav1.Condition{
-			Type:               conditionWebReady,
-			Status:             metav1.ConditionFalse,
-			Reason:             "FetchError",
-			Message:            fmt.Sprintf("Failed to check web deployment: %v", err),
-			ObservedGeneration: instance.Generation,
-		}
-	}
-
-	if deploy.Status.ReadyReplicas > 0 && deploy.Status.ReadyReplicas >= deploy.Status.Replicas {
-		return metav1.Condition{
-			Type:               conditionWebReady,
-			Status:             metav1.ConditionTrue,
-			Reason:             "DeploymentReady",
-			Message:            fmt.Sprintf("Web deployment has %d/%d ready replicas", deploy.Status.ReadyReplicas, deploy.Status.Replicas),
-			ObservedGeneration: instance.Generation,
-		}
-	}
-
-	return metav1.Condition{
-		Type:               conditionWebReady,
-		Status:             metav1.ConditionFalse,
-		Reason:             "DeploymentNotReady",
-		Message:            fmt.Sprintf("Web deployment has %d/%d ready replicas", deploy.Status.ReadyReplicas, deploy.Status.Replicas),
-		ObservedGeneration: instance.Generation,
-	}
+	instance.Status.Web.Issues = issues
+	return condition
 }
 
-// checkWorkerDeployment evaluates Worker component health from deployment readiness.
+// checkWorkerDeployment evaluates Worker component health from deployment
+// readiness, falling back to pod-level diagnosis when replicas are not ready.
 func (r *HealthMonitorReconciler) checkWorkerDeployment(ctx context.Context, instance *v1alpha1.LangfuseInstance) metav1.Condition {
+	condition, issues := r.checkComponentDeployment(ctx, instance,
+		componentWorker, resources.WorkerName(instance), conditionWorkerReady)
+	if instance.Status.Worker == nil {
+		instance.Status.Worker = &v1alpha1.WorkerComponentStatus{}
+	}
+	instance.Status.Worker.Issues = issues
+	return condition
+}
+
+// checkComponentDeployment evaluates a Deployment's readiness and, when it is
+// not ready, inspects its pods so the condition explains *why* rather than just
+// reporting a replica count. Returns the condition and the pod issues found.
+func (r *HealthMonitorReconciler) checkComponentDeployment(
+	ctx context.Context,
+	instance *v1alpha1.LangfuseInstance,
+	component, deployName, conditionType string,
+) (metav1.Condition, []v1alpha1.PodIssue) {
 	log := logf.FromContext(ctx)
 
-	deploy := &appsv1.Deployment{}
-	err := r.Get(ctx, client.ObjectKey{
-		Name:      resources.WorkerName(instance),
-		Namespace: instance.Namespace,
-	}, deploy)
-
-	if apierrors.IsNotFound(err) {
-		log.V(1).Info("worker deployment not found")
-		return metav1.Condition{
-			Type:               conditionWorkerReady,
-			Status:             metav1.ConditionFalse,
-			Reason:             "DeploymentNotFound",
-			Message:            "Worker deployment does not exist",
-			ObservedGeneration: instance.Generation,
-		}
-	}
-	if err != nil {
-		log.Error(err, "failed to get worker deployment")
-		return metav1.Condition{
-			Type:               conditionWorkerReady,
-			Status:             metav1.ConditionFalse,
-			Reason:             "FetchError",
-			Message:            fmt.Sprintf("Failed to check worker deployment: %v", err),
-			ObservedGeneration: instance.Generation,
-		}
-	}
-
-	if deploy.Status.ReadyReplicas > 0 && deploy.Status.ReadyReplicas >= deploy.Status.Replicas {
-		return metav1.Condition{
-			Type:               conditionWorkerReady,
-			Status:             metav1.ConditionTrue,
-			Reason:             "DeploymentReady",
-			Message:            fmt.Sprintf("Worker deployment has %d/%d ready replicas", deploy.Status.ReadyReplicas, deploy.Status.Replicas),
-			ObservedGeneration: instance.Generation,
-		}
-	}
-
-	return metav1.Condition{
-		Type:               conditionWorkerReady,
+	condition := metav1.Condition{
+		Type:               conditionType,
 		Status:             metav1.ConditionFalse,
-		Reason:             "DeploymentNotReady",
-		Message:            fmt.Sprintf("Worker deployment has %d/%d ready replicas", deploy.Status.ReadyReplicas, deploy.Status.Replicas),
 		ObservedGeneration: instance.Generation,
 	}
+
+	deploy := &appsv1.Deployment{}
+	err := r.Get(ctx, client.ObjectKey{Name: deployName, Namespace: instance.Namespace}, deploy)
+
+	if apierrors.IsNotFound(err) {
+		log.V(1).Info("deployment not found", "component", component)
+		condition.Reason = "DeploymentNotFound"
+		condition.Message = fmt.Sprintf("%s deployment does not exist", component)
+		return condition, nil
+	}
+	if err != nil {
+		log.Error(err, "failed to get deployment", "component", component)
+		condition.Reason = "FetchError"
+		condition.Message = fmt.Sprintf("Failed to check %s deployment: %v", component, err)
+		return condition, nil
+	}
+
+	replicaSummary := fmt.Sprintf("%s deployment has %d/%d ready replicas",
+		component, deploy.Status.ReadyReplicas, deploy.Status.Replicas)
+
+	if deploy.Status.ReadyReplicas > 0 && deploy.Status.ReadyReplicas >= deploy.Status.Replicas {
+		condition.Status = metav1.ConditionTrue
+		condition.Reason = "DeploymentReady"
+		condition.Message = replicaSummary
+		return condition, nil
+	}
+
+	// Not ready — ask the pods why.
+	issues, err := collectPodIssues(ctx, r.Client, instance.Namespace,
+		resources.SelectorLabels(instance, component))
+	if err != nil {
+		// Losing pod detail must not mask the underlying not-ready state.
+		log.Error(err, "failed to collect pod issues", "component", component)
+		condition.Reason = "DeploymentNotReady"
+		condition.Message = replicaSummary
+		return condition, nil
+	}
+
+	condition.Reason, condition.Message = summarizePodIssues(issues, "DeploymentNotReady", replicaSummary)
+	return condition, issues
 }
 
 // applyCondition sets the condition on the instance and emits an event if the condition changed.
@@ -317,6 +302,10 @@ func (r *HealthMonitorReconciler) applyCondition(instance *v1alpha1.LangfuseInst
 // determineOverallHealth sets the instance phase based on component conditions.
 // Critical components are Database, ClickHouse, Redis, Web, and Worker.
 // BlobStorage is only critical if explicitly configured.
+//
+// A fatal pod issue (bad image reference, missing Secret key) reports Error
+// rather than Degraded: Degraded implies the instance may recover on its own,
+// whereas these need the user to change something.
 func (r *HealthMonitorReconciler) determineOverallHealth(instance *v1alpha1.LangfuseInstance, conditions []metav1.Condition) {
 	allReady := true
 	for _, c := range conditions {
@@ -326,13 +315,29 @@ func (r *HealthMonitorReconciler) determineOverallHealth(instance *v1alpha1.Lang
 		}
 	}
 
-	if allReady {
+	switch {
+	case allReady:
 		instance.Status.Phase = phaseRunning
 		instance.Status.Ready = true
-	} else {
+	case instanceHasFatalPodIssue(instance):
+		instance.Status.Phase = phaseError
+		instance.Status.Ready = false
+	default:
 		instance.Status.Phase = phaseDegraded
 		instance.Status.Ready = false
 	}
+}
+
+// instanceHasFatalPodIssue reports whether any component has a pod issue that
+// requires human intervention.
+func instanceHasFatalPodIssue(instance *v1alpha1.LangfuseInstance) bool {
+	if instance.Status.Web != nil && hasFatalIssue(instance.Status.Web.Issues) {
+		return true
+	}
+	if instance.Status.Worker != nil && hasFatalIssue(instance.Status.Worker.Issues) {
+		return true
+	}
+	return false
 }
 
 // conditionChanged reports whether a condition has meaningfully changed

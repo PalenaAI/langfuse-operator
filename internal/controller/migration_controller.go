@@ -48,6 +48,7 @@ type MigrationController struct {
 // +kubebuilder:rbac:groups=langfuse.palena.ai,resources=langfuseinstances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
 
 func (r *MigrationController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -143,6 +144,16 @@ func (r *MigrationController) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, nil
 	}
 
+	// Diagnose the migration pods so a stuck or failed migration explains
+	// itself (bad DATABASE_URL, unreachable store, missing Secret key) instead
+	// of only reporting an attempt count.
+	issues := r.migrationPodIssues(ctx, instance)
+	instance.Status.Migration = &v1alpha1.MigrationStatus{
+		JobName: jobName,
+		Failed:  existingJob.Status.Failed,
+		Issues:  issues,
+	}
+
 	if existingJob.Status.Failed > 0 {
 		backoffLimit := int32(3)
 		if existingJob.Spec.BackoffLimit != nil {
@@ -150,11 +161,13 @@ func (r *MigrationController) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 		if existingJob.Status.Failed >= backoffLimit {
 			log.Error(nil, "migration job failed", "version", desiredTag, "failures", existingJob.Status.Failed)
+			summary := fmt.Sprintf("Migration job failed after %d attempts", existingJob.Status.Failed)
+			reason, message := summarizePodIssues(issues, "MigrationFailed", summary)
 			meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
 				Type:               "MigrationsComplete",
 				Status:             metav1.ConditionFalse,
-				Reason:             "MigrationFailed",
-				Message:            fmt.Sprintf("Migration job failed after %d attempts", existingJob.Status.Failed),
+				Reason:             reason,
+				Message:            message,
 				ObservedGeneration: instance.Generation,
 			})
 			instance.Status.Phase = phaseError
@@ -162,14 +175,45 @@ func (r *MigrationController) Reconcile(ctx context.Context, req ctrl.Request) (
 				log.Error(statusErr, "failed to update status")
 			}
 			r.Recorder.Eventf(instance, "Warning", "MigrationFailed",
-				"Migration job %s failed after %d attempts", jobName, existingJob.Status.Failed)
+				"Migration job %s failed after %d attempts: %s", jobName, existingJob.Status.Failed, message)
 			return ctrl.Result{}, nil
 		}
 	}
 
-	// Job still running — requeue
+	// Job still running — surface any in-flight pod problems (a fatal one, such
+	// as a missing Secret key, will never clear on its own) and requeue.
 	log.Info("migration job in progress", "version", desiredTag)
+	if len(issues) > 0 {
+		summary := "Migration job in progress"
+		reason, message := summarizePodIssues(issues, "MigrationInProgress", summary)
+		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+			Type:               "MigrationsComplete",
+			Status:             metav1.ConditionFalse,
+			Reason:             reason,
+			Message:            message,
+			ObservedGeneration: instance.Generation,
+		})
+		if hasFatalIssue(issues) {
+			instance.Status.Phase = phaseError
+		}
+	}
+	if statusErr := r.Status().Update(ctx, instance); statusErr != nil {
+		log.Error(statusErr, "failed to update status")
+	}
 	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+}
+
+// migrationPodIssues collects pod-level problems from the migration Job's pods.
+// Diagnostics are best-effort — a failure to list pods must not abort the
+// migration reconcile.
+func (r *MigrationController) migrationPodIssues(ctx context.Context, instance *v1alpha1.LangfuseInstance) []v1alpha1.PodIssue {
+	issues, err := collectPodIssues(ctx, r.Client, instance.Namespace,
+		resources.SelectorLabels(instance, componentMigration))
+	if err != nil {
+		logf.FromContext(ctx).Error(err, "failed to collect migration pod issues")
+		return nil
+	}
+	return issues
 }
 
 func (r *MigrationController) cleanupCompletedJobs(ctx context.Context, instance *v1alpha1.LangfuseInstance) (ctrl.Result, error) {

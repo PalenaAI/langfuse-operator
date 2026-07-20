@@ -1195,6 +1195,10 @@ type LangfuseInstanceStatus struct {
 	// Database reports the state of the database.
 	// +optional
 	Database *DatabaseStatus `json:"database,omitempty"`
+	// Migration reports the state of the database migration Job, including any
+	// pod-level failures that explain a stuck or failed migration.
+	// +optional
+	Migration *MigrationStatus `json:"migration,omitempty"`
 	// ClickHouse reports the state of ClickHouse.
 	// +optional
 	ClickHouse *ClickHouseStatus `json:"clickhouse,omitempty"`
@@ -1233,6 +1237,52 @@ type ComponentStatus struct {
 	// Endpoint is the internal service endpoint.
 	// +optional
 	Endpoint string `json:"endpoint,omitempty"`
+	// Issues lists pod-level problems preventing this component from becoming
+	// ready — image pull failures, misconfigured Secret references, crash
+	// loops, scheduling failures. Empty when the component is healthy.
+	// +optional
+	Issues []PodIssue `json:"issues,omitempty"`
+}
+
+// PodIssue describes a pod-level failure surfaced from the Kubernetes pod
+// status, so users can diagnose a stuck component without inspecting pods by
+// hand.
+type PodIssue struct {
+	// Pod is the name of the affected pod.
+	Pod string `json:"pod"`
+	// Container is the container within the pod that reported the problem.
+	// Empty for pod-level problems such as scheduling failures.
+	// +optional
+	Container string `json:"container,omitempty"`
+	// Reason is the Kubernetes reason for the failure, e.g. CrashLoopBackOff,
+	// ImagePullBackOff, CreateContainerConfigError, or Unschedulable.
+	Reason string `json:"reason"`
+	// Message is the human-readable detail reported by Kubernetes.
+	// +optional
+	Message string `json:"message,omitempty"`
+	// RestartCount is the container's restart count, useful for spotting crash
+	// loops that are slowly backing off.
+	// +optional
+	RestartCount int32 `json:"restartCount,omitempty"`
+	// Fatal indicates the failure cannot resolve on its own and needs human
+	// action (a bad image reference or a missing Secret key, as opposed to a
+	// pod still waiting on a dependency). Any fatal issue moves the instance
+	// to the Error phase rather than Degraded.
+	// +optional
+	Fatal bool `json:"fatal,omitempty"`
+}
+
+// MigrationStatus reports the state of the database migration Job.
+type MigrationStatus struct {
+	// JobName is the name of the migration Job.
+	// +optional
+	JobName string `json:"jobName,omitempty"`
+	// Failed is the number of failed migration pod attempts.
+	// +optional
+	Failed int32 `json:"failed,omitempty"`
+	// Issues lists pod-level problems from the migration Job's pods.
+	// +optional
+	Issues []PodIssue `json:"issues,omitempty"`
 }
 
 // WorkerComponentStatus extends ComponentStatus with worker-specific fields.

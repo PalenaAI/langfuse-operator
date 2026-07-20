@@ -74,6 +74,7 @@ type LangfuseInstanceReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
@@ -326,6 +327,7 @@ func (r *LangfuseInstanceReconciler) updateStatus(ctx context.Context, instance 
 			Replicas:      webDeploy.Status.Replicas,
 			ReadyReplicas: webDeploy.Status.ReadyReplicas,
 			Endpoint:      fmt.Sprintf("http://%s.%s.svc:3000", resources.WebServiceName(instance), instance.Namespace),
+			Issues:        r.podIssuesFor(ctx, instance, componentWeb, webDeploy),
 		}
 	}
 
@@ -339,6 +341,7 @@ func (r *LangfuseInstanceReconciler) updateStatus(ctx context.Context, instance 
 			ComponentStatus: v1alpha1.ComponentStatus{
 				Replicas:      workerDeploy.Status.Replicas,
 				ReadyReplicas: workerDeploy.Status.ReadyReplicas,
+				Issues:        r.podIssuesFor(ctx, instance, componentWorker, workerDeploy),
 			},
 		}
 	}
@@ -347,10 +350,16 @@ func (r *LangfuseInstanceReconciler) updateStatus(ctx context.Context, instance 
 	webReady := instance.Status.Web != nil && instance.Status.Web.ReadyReplicas > 0
 	workerReady := instance.Status.Worker != nil && instance.Status.Worker.ReadyReplicas > 0
 
-	if webReady && workerReady {
+	switch {
+	case webReady && workerReady:
 		instance.Status.Phase = phaseRunning
 		instance.Status.Ready = true
-	} else {
+	case instanceHasFatalPodIssue(instance):
+		// A bad image or a missing Secret key never resolves on its own, so
+		// report Error instead of leaving the instance in Pending forever.
+		instance.Status.Phase = phaseError
+		instance.Status.Ready = false
+	default:
 		instance.Status.Phase = phasePending
 		instance.Status.Ready = false
 	}
@@ -367,6 +376,30 @@ func (r *LangfuseInstanceReconciler) updateStatus(ctx context.Context, instance 
 	})
 
 	return r.Status().Update(ctx, instance)
+}
+
+// podIssuesFor returns pod-level problems for a component, but only when the
+// Deployment is not fully ready — a healthy component should never carry stale
+// issues, and skipping the pod List on the happy path keeps reconciles cheap.
+func (r *LangfuseInstanceReconciler) podIssuesFor(
+	ctx context.Context,
+	instance *v1alpha1.LangfuseInstance,
+	component string,
+	deploy *appsv1.Deployment,
+) []v1alpha1.PodIssue {
+	if deploy.Status.ReadyReplicas > 0 && deploy.Status.ReadyReplicas >= deploy.Status.Replicas {
+		return nil
+	}
+
+	issues, err := collectPodIssues(ctx, r.Client, instance.Namespace,
+		resources.SelectorLabels(instance, component))
+	if err != nil {
+		// Diagnostics are best-effort: failing to read pods must not fail the
+		// reconcile, which would stop the operator managing the instance.
+		logf.FromContext(ctx).Error(err, "failed to collect pod issues", "component", component)
+		return nil
+	}
+	return issues
 }
 
 func boolToConditionStatus(b bool) metav1.ConditionStatus {

@@ -34,9 +34,10 @@ Deploys and manages the complete Langfuse stack: Web, Worker, and all dependent 
 |---|---|---|
 | `ready` | bool | Whether the instance is fully operational |
 | `phase` | string | `Pending`, `Migrating`, `Running`, `Degraded`, or `Error` |
-| `web` | ComponentStatus | Web component state |
-| `worker` | WorkerComponentStatus | Worker component state |
+| `web` | ComponentStatus | Web component state: `replicas`, `readyReplicas`, `endpoint`, and [`issues`](#podissue) |
+| `worker` | WorkerComponentStatus | Worker component state: as above plus `queueDepth`, `circuitBreakerActive` |
 | `database` | DatabaseStatus | Database connection and migration state |
+| `migration` | [`MigrationStatus`](#migrationstatus) | Migration Job state, including pod-level failures |
 | `clickhouse` | ClickHouseStatus | ClickHouse state including storage |
 | `redis` | ConnectionStatus | Redis connection state |
 | `blobStorage` | BlobStorageStatus | Blob storage state |
@@ -441,6 +442,29 @@ The operator composes `DATABASE_URL` as `$(DATABASE_URL_BASE)?<params>` via env 
 | `name` | string | | Secret name. |
 | `certKey` | string | `tls.crt` | Secret key holding the PEM client certificate. |
 | `keyKey` | string | `tls.key` | Secret key holding the PEM client private key. |
+
+### PodIssue
+
+A pod-level failure surfaced into `status.web.issues`, `status.worker.issues`, or `status.migration.issues`, so a stuck component can be diagnosed without inspecting pods by hand. Populated only while a component is not ready.
+
+| Field | Type | Description |
+|---|---|---|
+| `pod` | string | Name of the affected pod. |
+| `container` | string | Container that reported the problem. Empty for pod-level problems such as scheduling failures. |
+| `reason` | string | Kubernetes reason, e.g. `CrashLoopBackOff`, `ImagePullBackOff`, `CreateContainerConfigError`, `Unschedulable`, `OOMKilled`. |
+| `message` | string | Human-readable detail. For a crash loop this includes the previous run's exit code and captured output. |
+| `restartCount` | int32 | Container restart count. |
+| `fatal` | bool | The failure cannot self-heal and needs human action. Any fatal issue moves the instance to `phase: Error` instead of `Degraded`. |
+
+**Fatal** reasons are those that never resolve on their own: `ImagePullBackOff`, `ErrImagePull`, `InvalidImageName`, `ErrImageNeverPull`, `CreateContainerConfigError`, `CreateContainerError`. `CrashLoopBackOff` is deliberately **not** fatal — Langfuse containers legitimately crash-loop while waiting for Postgres or ClickHouse during a cold start.
+
+### MigrationStatus
+
+| Field | Type | Description |
+|---|---|---|
+| `jobName` | string | Name of the migration Job. |
+| `failed` | int32 | Number of failed migration pod attempts. |
+| `issues` | [][`PodIssue`](#podissue) | Pod-level problems from the migration Job's pods. |
 
 ### S3Spec
 

@@ -7468,6 +7468,63 @@ spec:
                     description: MigrationVersion is the current migration version.
                     type: string
                 type: object
+              migration:
+                description: |-
+                  Migration reports the state of the database migration Job, including any
+                  pod-level failures that explain a stuck or failed migration.
+                properties:
+                  failed:
+                    description: Failed is the number of failed migration pod attempts.
+                    format: int32
+                    type: integer
+                  issues:
+                    description: Issues lists pod-level problems from the migration
+                      Job's pods.
+                    items:
+                      description: |-
+                        PodIssue describes a pod-level failure surfaced from the Kubernetes pod
+                        status, so users can diagnose a stuck component without inspecting pods by
+                        hand.
+                      properties:
+                        container:
+                          description: |-
+                            Container is the container within the pod that reported the problem.
+                            Empty for pod-level problems such as scheduling failures.
+                          type: string
+                        fatal:
+                          description: |-
+                            Fatal indicates the failure cannot resolve on its own and needs human
+                            action (a bad image reference or a missing Secret key, as opposed to a
+                            pod still waiting on a dependency). Any fatal issue moves the instance
+                            to the Error phase rather than Degraded.
+                          type: boolean
+                        message:
+                          description: Message is the human-readable detail reported
+                            by Kubernetes.
+                          type: string
+                        pod:
+                          description: Pod is the name of the affected pod.
+                          type: string
+                        reason:
+                          description: |-
+                            Reason is the Kubernetes reason for the failure, e.g. CrashLoopBackOff,
+                            ImagePullBackOff, CreateContainerConfigError, or Unschedulable.
+                          type: string
+                        restartCount:
+                          description: |-
+                            RestartCount is the container's restart count, useful for spotting crash
+                            loops that are slowly backing off.
+                          format: int32
+                          type: integer
+                      required:
+                      - pod
+                      - reason
+                      type: object
+                    type: array
+                  jobName:
+                    description: JobName is the name of the migration Job.
+                    type: string
+                type: object
               organizations:
                 description: Organizations is the count of managed organizations.
                 format: int32
@@ -7522,6 +7579,52 @@ spec:
                   endpoint:
                     description: Endpoint is the internal service endpoint.
                     type: string
+                  issues:
+                    description: |-
+                      Issues lists pod-level problems preventing this component from becoming
+                      ready — image pull failures, misconfigured Secret references, crash
+                      loops, scheduling failures. Empty when the component is healthy.
+                    items:
+                      description: |-
+                        PodIssue describes a pod-level failure surfaced from the Kubernetes pod
+                        status, so users can diagnose a stuck component without inspecting pods by
+                        hand.
+                      properties:
+                        container:
+                          description: |-
+                            Container is the container within the pod that reported the problem.
+                            Empty for pod-level problems such as scheduling failures.
+                          type: string
+                        fatal:
+                          description: |-
+                            Fatal indicates the failure cannot resolve on its own and needs human
+                            action (a bad image reference or a missing Secret key, as opposed to a
+                            pod still waiting on a dependency). Any fatal issue moves the instance
+                            to the Error phase rather than Degraded.
+                          type: boolean
+                        message:
+                          description: Message is the human-readable detail reported
+                            by Kubernetes.
+                          type: string
+                        pod:
+                          description: Pod is the name of the affected pod.
+                          type: string
+                        reason:
+                          description: |-
+                            Reason is the Kubernetes reason for the failure, e.g. CrashLoopBackOff,
+                            ImagePullBackOff, CreateContainerConfigError, or Unschedulable.
+                          type: string
+                        restartCount:
+                          description: |-
+                            RestartCount is the container's restart count, useful for spotting crash
+                            loops that are slowly backing off.
+                          format: int32
+                          type: integer
+                      required:
+                      - pod
+                      - reason
+                      type: object
+                    type: array
                   readyReplicas:
                     description: ReadyReplicas is the number of ready replicas.
                     format: int32
@@ -7545,6 +7648,52 @@ spec:
                   endpoint:
                     description: Endpoint is the internal service endpoint.
                     type: string
+                  issues:
+                    description: |-
+                      Issues lists pod-level problems preventing this component from becoming
+                      ready — image pull failures, misconfigured Secret references, crash
+                      loops, scheduling failures. Empty when the component is healthy.
+                    items:
+                      description: |-
+                        PodIssue describes a pod-level failure surfaced from the Kubernetes pod
+                        status, so users can diagnose a stuck component without inspecting pods by
+                        hand.
+                      properties:
+                        container:
+                          description: |-
+                            Container is the container within the pod that reported the problem.
+                            Empty for pod-level problems such as scheduling failures.
+                          type: string
+                        fatal:
+                          description: |-
+                            Fatal indicates the failure cannot resolve on its own and needs human
+                            action (a bad image reference or a missing Secret key, as opposed to a
+                            pod still waiting on a dependency). Any fatal issue moves the instance
+                            to the Error phase rather than Degraded.
+                          type: boolean
+                        message:
+                          description: Message is the human-readable detail reported
+                            by Kubernetes.
+                          type: string
+                        pod:
+                          description: Pod is the name of the affected pod.
+                          type: string
+                        reason:
+                          description: |-
+                            Reason is the Kubernetes reason for the failure, e.g. CrashLoopBackOff,
+                            ImagePullBackOff, CreateContainerConfigError, or Unschedulable.
+                          type: string
+                        restartCount:
+                          description: |-
+                            RestartCount is the container's restart count, useful for spotting crash
+                            loops that are slowly backing off.
+                          format: int32
+                          type: integer
+                      required:
+                      - pod
+                      - reason
+                      type: object
+                    type: array
                   queueDepth:
                     description: QueueDepth is the current worker queue depth.
                     format: int64

@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **`spec.clickhouse.external.tls.enabled`** — sets `CLICKHOUSE_MIGRATION_SSL=true`; provide the `https://…:8443` / `clickhouse://…:9440` URLs in the connection Secret.
   - **`spec.database.external.tls`** — `sslMode` (`disable`/`require`/`verify-ca`/`verify-full`) and optional `caSecretRef`. The operator composes `DATABASE_URL` with Prisma's TLS parameters (`sslmode`/`sslaccept`/`sslcert`) via env interpolation, so the connection URL in the Secret must not contain a query string.
 - **`spec.worker.extraVolumes` / `spec.worker.extraVolumeMounts`** — parity with `spec.web`, so arbitrary volumes (extra certificates, etc.) can be mounted into the Worker pod as a general escape hatch.
+- **Pod-level failures are now reported on the LangfuseInstance.** Previously a component that could not start showed up only as `Phase: Pending` with a `0/1 ready replicas` message, and the actual cause — `CreateContainerConfigError` from a missing Secret key, `ImagePullBackOff`, `CrashLoopBackOff`, `OOMKilled`, `Unschedulable` — was visible only by inspecting pods by hand. The operator now surfaces it directly:
+  - **`status.web.issues` / `status.worker.issues` / `status.migration.issues`** list the offending pod, container, Kubernetes reason, message, and restart count. For a crash loop the message includes the previous run's exit code and captured output (so a Langfuse `ZodError` about a missing env var is visible in the CR).
+  - The `WebReady` / `WorkerReady` / `MigrationsComplete` conditions now carry the real reason and detail instead of a bare replica count, so `kubectl describe` explains the failure.
+  - **New `Error` phase semantics** — failures that cannot self-heal (bad image reference, missing Secret key) report `Phase: Error` instead of sitting in `Pending`/`Degraded` indefinitely. `CrashLoopBackOff` stays non-fatal, since Langfuse containers legitimately crash-loop while waiting for Postgres/ClickHouse on a cold start.
+  - **`status.migration`** reports the migration Job name, failed attempt count, and its pods' issues.
+  - See [docs/guide/troubleshooting.md](docs/guide/troubleshooting.md).
+
+### Fixed
+
+- **Health checks no longer skip instances stuck in `Pending`.** The health monitor only ran when the instance was already `Running` or `Degraded`, so a first rollout that never came up — precisely when the dependency probes and pod diagnostics are most useful — was never evaluated and the instance sat in `Pending` with no explanation. Health checks now run in `Pending` too (they are still skipped during `Migrating`, which the migration controller owns).
 
 ## [0.8.0] - 2026-06-25
 

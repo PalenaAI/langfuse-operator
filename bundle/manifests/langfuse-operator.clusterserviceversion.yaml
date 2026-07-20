@@ -82,7 +82,7 @@ metadata:
     capabilities: Deep Insights
     categories: AI/Machine Learning, Monitoring
     containerImage: ghcr.io/palenaai/langfuse-operator:v0.9.0
-    createdAt: "2026-07-20T11:46:58Z"
+    createdAt: "2026-07-20T13:44:23Z"
     description: Kubernetes operator for deploying and managing production-ready Langfuse
       LLM observability instances.
     operators.operatorframework.io/builder: operator-sdk-v1.42.1

@@ -4,6 +4,11 @@ on:
   push:
   pull_request:
 
+# Least privilege: this workflow only checks out the code and runs tests in a
+# throwaway Kind cluster.
+permissions:
+  contents: read
+
 jobs:
   test-e2e:
     name: Run on Ubuntu

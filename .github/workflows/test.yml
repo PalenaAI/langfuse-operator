@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+# Least privilege: this workflow only checks out and tests the code.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Run on Ubuntu

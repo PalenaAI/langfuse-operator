@@ -13,6 +13,11 @@ on:
     - cron: "17 4 * * *"
   workflow_dispatch:
 
+# Least privilege: this workflow only checks out the code and runs tests in a
+# throwaway Kind cluster.
+permissions:
+  contents: read
+
 jobs:
   test-e2e-latest:
     name: Run against langfuse:latest

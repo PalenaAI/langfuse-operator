@@ -216,9 +216,15 @@ ifndef ignore-not-found
   ignore-not-found = false
 endif
 
+# Server-side apply is required, not a preference: client-side `kubectl apply`
+# records the whole object in the kubectl.kubernetes.io/last-applied-configuration
+# annotation, and the LangfuseInstance CRD exceeds the 262144-byte annotation
+# limit (it embeds full corev1 Volume/Affinity/Toleration schemas). Server-side
+# apply tracks ownership in managedFields instead, so the limit does not apply.
+# --force-conflicts takes ownership from any previous client-side apply.
 .PHONY: install
 install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -
+	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply --server-side --force-conflicts -f -
 
 .PHONY: uninstall
 uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
@@ -227,7 +233,8 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
+	# config/default includes ../crd, so this needs server-side apply too.
+	$(KUSTOMIZE) build config/default | $(KUBECTL) apply --server-side --force-conflicts -f -
 
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.

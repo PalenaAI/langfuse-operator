@@ -49,7 +49,7 @@ helm install langfuse-operator deploy/charts/langfuse-operator \
   --create-namespace
 ```
 
-The chart defaults to the image tag matching its `appVersion` (e.g. `v0.9.0`). To pin an older release, pass `--set image.tag=v0.6.4`.
+The chart defaults to the image tag matching its `appVersion` (e.g. `v0.10.0`). To pin an older release, pass `--set image.tag=v0.6.4`.
 
 See the [chart values](https://github.com/PalenaAI/langfuse-operator/blob/main/deploy/charts/langfuse-operator/values.yaml) for all configuration options (replicas, resources, tolerations, affinity, etc.).
 
@@ -75,8 +75,18 @@ OLM automatically injects `WATCH_NAMESPACE` when the operator is installed in **
 Apply the raw manifests directly:
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/PalenaAI/langfuse-operator/main/dist/install.yaml
+kubectl apply --server-side -f https://raw.githubusercontent.com/PalenaAI/langfuse-operator/main/dist/install.yaml
 ```
+
+::: warning Server-side apply is required
+The `LangfuseInstance` CRD is larger than the 262144-byte limit on the
+`kubectl.kubernetes.io/last-applied-configuration` annotation that **client-side**
+apply writes, so a plain `kubectl apply -f` fails with `metadata.annotations: Too long`.
+Server-side apply tracks ownership in `managedFields` instead and has no such limit.
+
+Upgrading a cluster that was previously installed client-side may additionally need
+`--force-conflicts` to take over field ownership. Helm and OLM installs are unaffected.
+:::
 
 Or build from source:
 

@@ -48,17 +48,19 @@ helm install langfuse-operator deploy/charts/langfuse-operator \
   -n langfuse-operator-system --create-namespace
 ```
 
-The chart defaults to the image tag matching its `appVersion` (e.g. `v0.9.0`). To pin a different release, pass `--set image.tag=v0.6.4`.
+The chart defaults to the image tag matching its `appVersion` (e.g. `v0.10.0`). To pin a different release, pass `--set image.tag=v0.6.4`.
 
 This installs the CRDs, RBAC, and operator deployment. See the [chart values](deploy/charts/langfuse-operator/values.yaml) for all configuration options.
 
 ### Install CRDs only (manual deploy)
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/PalenaAI/langfuse-operator/main/config/crd/bases/langfuse.palena.ai_langfuseinstances.yaml
-kubectl apply -f https://raw.githubusercontent.com/PalenaAI/langfuse-operator/main/config/crd/bases/langfuse.palena.ai_langfuseorganizations.yaml
-kubectl apply -f https://raw.githubusercontent.com/PalenaAI/langfuse-operator/main/config/crd/bases/langfuse.palena.ai_langfuseprojects.yaml
+kubectl apply --server-side -f https://raw.githubusercontent.com/PalenaAI/langfuse-operator/main/config/crd/bases/langfuse.palena.ai_langfuseinstances.yaml
+kubectl apply --server-side -f https://raw.githubusercontent.com/PalenaAI/langfuse-operator/main/config/crd/bases/langfuse.palena.ai_langfuseorganizations.yaml
+kubectl apply --server-side -f https://raw.githubusercontent.com/PalenaAI/langfuse-operator/main/config/crd/bases/langfuse.palena.ai_langfuseprojects.yaml
 ```
+
+> `--server-side` is required for the `LangfuseInstance` CRD. Client-side apply stores the whole object in an annotation limited to 262144 bytes, and this CRD is larger than that. Upgrading from an earlier client-side install may also need `--force-conflicts`.
 
 ### Deploy a Langfuse Instance
 

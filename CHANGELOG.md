@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-07-20
+
 ### Deprecated
 
 - **Managed datastore modes are deprecated and will be removed in 0.11.0.** They are single-node deployments with no replication, failover, or backups, and they impose a per-feature cost on everything the operator does (datastore TLS, for example, is external-only because managed mode has no certificate provisioning). An instance using one now reports a `Deprecated` status condition naming the fields and the removal release.

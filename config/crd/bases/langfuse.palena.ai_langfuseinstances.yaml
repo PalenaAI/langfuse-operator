@@ -1161,6 +1161,34 @@ spec:
                         default: true
                         description: Enabled toggles NetworkPolicy creation.
                         type: boolean
+                      extraEgressPorts:
+                        description: |-
+                          ExtraEgressPorts opens additional destination ports in the generated
+                          egress rules. The operator allows the well-known datastore ports (both
+                          plaintext and TLS) by default, but the actual ports come from connection
+                          Secrets it cannot introspect — use this for datastores on non-standard
+                          ports, sidecars, or additional external services.
+                        items:
+                          description: NetworkPolicyPort is an additional destination
+                            port to allow in egress rules.
+                          properties:
+                            port:
+                              description: Port is the destination port number.
+                              format: int32
+                              maximum: 65535
+                              minimum: 1
+                              type: integer
+                            protocol:
+                              default: TCP
+                              description: Protocol is the transport protocol.
+                              enum:
+                              - TCP
+                              - UDP
+                              type: string
+                          required:
+                          - port
+                          type: object
+                        type: array
                     type: object
                   readOnlyRootFilesystem:
                     default: true

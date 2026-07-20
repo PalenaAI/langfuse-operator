@@ -105,7 +105,7 @@ spec:
 | Direction | Rule |
 |-----------|------|
 | **Ingress** | Allow TCP port 3000 from any source |
-| **Egress** | Allow TCP to PostgreSQL (5432), ClickHouse (8123, 9000), Redis (6379), HTTPS (443), internal (3000) |
+| **Egress** | Allow TCP to the default datastore ports (below) |
 | **Egress** | Allow DNS (UDP+TCP port 53) |
 
 ### Worker NetworkPolicy (`<name>-worker-netpol`)
@@ -114,5 +114,41 @@ spec:
 |-----------|------|
 | **Ingress** | Deny all (worker exposes no ports) |
 | **Egress** | Same as Web |
+
+### Default egress ports
+
+Both the plaintext and TLS ports of each datastore are allowed, because the real
+port lives in a connection Secret the operator does not read:
+
+| Port | Purpose |
+|---|---|
+| 5432 | PostgreSQL |
+| 8123 / 8443 | ClickHouse HTTP / HTTPS |
+| 9000 / 9440 | ClickHouse native / native secure — 9000 also covers MinIO |
+| 6379 / 6380 | Redis / Redis TLS |
+| 443 | HTTPS — blob storage, LLM APIs, OIDC providers |
+| 3000 | Web ↔ Worker |
+
+### Non-standard ports
+
+If a datastore listens somewhere else — a pooler, a cloud provider's custom
+port, a sidecar — add it explicitly. Otherwise the connection fails as an opaque
+timeout, since a NetworkPolicy drop is silent:
+
+```yaml
+spec:
+  security:
+    networkPolicy:
+      extraEgressPorts:
+        - port: 15432            # PgBouncer
+        - port: 1514
+          protocol: UDP          # defaults to TCP
+```
+
+::: tip
+If a component cannot reach a datastore and `status` shows a connection timeout
+rather than an auth or TLS error, check this list first — especially with
+[Datastore TLS](./datastore-tls) on a non-conventional port.
+:::
 
 Both policies are owned by the `LangfuseInstance` CR and are automatically deleted when the instance is removed.

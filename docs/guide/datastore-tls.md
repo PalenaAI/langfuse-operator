@@ -31,6 +31,14 @@ There are two layers, designed to compose:
 All references are secret-ref based (`name` + `key`) and accept cert-manager's
 standard `ca.crt` / `tls.crt` / `tls.key` keys by default.
 
+::: warning NetworkPolicy and TLS ports
+`spec.security.networkPolicy` is **enabled by default**. Its egress rules allow
+the standard TLS datastore ports (8443, 9440, 6380) alongside the plaintext
+ones, but a datastore on a non-standard port needs
+`networkPolicy.extraEgressPorts` — otherwise the connection fails as a silent
+timeout. See [Networking](./networking#non-standard-ports).
+:::
+
 ## Trusted CA bundle
 
 ```yaml

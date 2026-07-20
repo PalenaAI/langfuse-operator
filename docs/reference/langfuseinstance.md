@@ -568,6 +568,14 @@ A pod-level failure surfaced into `status.web.issues`, `status.worker.issues`, o
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | *bool | `true` | Create per-component NetworkPolicies |
+| `extraEgressPorts` | []NetworkPolicyPort | | Additional destination ports to allow. The defaults cover the well-known datastore ports (plaintext **and** TLS); use this for non-standard ports such as a connection pooler. See [Networking](../guide/networking.md#non-standard-ports). |
+
+### NetworkPolicyPort
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `port` | int32 | | Destination port (1–65535). |
+| `protocol` | string | `TCP` | `TCP` or `UDP`. |
 
 ### TelemetrySpec
 

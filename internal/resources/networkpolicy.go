@@ -25,9 +25,9 @@ import (
 	v1alpha1 "github.com/PalenaAI/langfuse-operator/api/v1alpha1"
 )
 
-// BuildWebNetworkPolicy constructs a NetworkPolicy for the Langfuse Web component.
-// It allows ingress on port 3000 from any source, and egress to PostgreSQL (5432),
-// ClickHouse (8123, 9000), Redis (6379), and DNS (53).
+// BuildWebNetworkPolicy constructs a NetworkPolicy for the Langfuse Web
+// component. It allows ingress on port 3000 from any source, plus the shared
+// datastore/DNS egress rules (see commonEgressRules).
 func BuildWebNetworkPolicy(instance *v1alpha1.LangfuseInstance) *networkingv1.NetworkPolicy {
 	labels := CommonLabels(instance, "web")
 	selectorLabels := SelectorLabels(instance, "web")
@@ -56,14 +56,14 @@ func BuildWebNetworkPolicy(instance *v1alpha1.LangfuseInstance) *networkingv1.Ne
 					},
 				},
 			},
-			Egress: commonEgressRules(),
+			Egress: commonEgressRules(instance),
 		},
 	}
 }
 
-// BuildWorkerNetworkPolicy constructs a NetworkPolicy for the Langfuse Worker component.
-// It allows no ingress (worker exposes no ports), and egress to PostgreSQL (5432),
-// ClickHouse (8123, 9000), Redis (6379), and DNS (53).
+// BuildWorkerNetworkPolicy constructs a NetworkPolicy for the Langfuse Worker
+// component. It allows no ingress (the worker exposes no ports), plus the
+// shared datastore/DNS egress rules (see commonEgressRules).
 func BuildWorkerNetworkPolicy(instance *v1alpha1.LangfuseInstance) *networkingv1.NetworkPolicy {
 	labels := CommonLabels(instance, "worker")
 	selectorLabels := SelectorLabels(instance, "worker")
@@ -84,28 +84,42 @@ func BuildWorkerNetworkPolicy(instance *v1alpha1.LangfuseInstance) *networkingv1
 			},
 			// No ingress rules — worker has no inbound traffic
 			Ingress: []networkingv1.NetworkPolicyIngressRule{},
-			Egress:  commonEgressRules(),
+			Egress:  commonEgressRules(instance),
 		},
 	}
 }
 
-// commonEgressRules returns egress rules shared by web and worker:
-// PostgreSQL (5432), ClickHouse HTTP (8123), ClickHouse native (9000),
-// Redis (6379), HTTPS (443 for blob storage / external APIs), and DNS (53 UDP+TCP).
-func commonEgressRules() []networkingv1.NetworkPolicyEgressRule {
+// defaultEgressPorts are the well-known datastore ports the operator opens by
+// default. Both the plaintext and TLS ports of each store are included: the
+// real port lives in a connection Secret the operator does not read, so it
+// cannot narrow this down per instance. Anything unusual goes through
+// spec.security.networkPolicy.extraEgressPorts.
+var defaultEgressPorts = []int{
+	5432, // PostgreSQL
+	8123, // ClickHouse HTTP
+	8443, // ClickHouse HTTPS (TLS)
+	9000, // ClickHouse native / MinIO S3
+	9440, // ClickHouse native secure (TLS)
+	6379, // Redis
+	6380, // Redis TLS (conventional)
+	443,  // HTTPS — blob storage, LLM APIs, OIDC providers
+	3000, // Web ↔ Worker internal
+}
+
+// commonEgressRules returns the egress rules shared by web and worker: the
+// datastore ports above, any operator-configured extra ports, and DNS.
+func commonEgressRules(instance *v1alpha1.LangfuseInstance) []networkingv1.NetworkPolicyEgressRule {
+	ports := make([]networkingv1.NetworkPolicyPort, 0, len(defaultEgressPorts))
+	for _, p := range defaultEgressPorts {
+		ports = append(ports, networkingv1.NetworkPolicyPort{
+			Protocol: protocolPtr(corev1.ProtocolTCP),
+			Port:     intstrPtr(p),
+		})
+	}
+	ports = append(ports, extraEgressPorts(instance)...)
+
 	return []networkingv1.NetworkPolicyEgressRule{
-		{
-			// Data stores
-			Ports: []networkingv1.NetworkPolicyPort{
-				{Protocol: protocolPtr(corev1.ProtocolTCP), Port: intstrPtr(5432)}, // PostgreSQL
-				{Protocol: protocolPtr(corev1.ProtocolTCP), Port: intstrPtr(8123)}, // ClickHouse HTTP
-				{Protocol: protocolPtr(corev1.ProtocolTCP), Port: intstrPtr(9000)}, // ClickHouse native
-				{Protocol: protocolPtr(corev1.ProtocolTCP), Port: intstrPtr(6379)}, // Redis
-				{Protocol: protocolPtr(corev1.ProtocolTCP), Port: intstrPtr(443)},  // HTTPS (blob storage, LLM APIs)
-				{Protocol: protocolPtr(corev1.ProtocolTCP), Port: intstrPtr(9000)}, // MinIO S3 (common port)
-				{Protocol: protocolPtr(corev1.ProtocolTCP), Port: intstrPtr(3000)}, // Web ↔ Worker internal
-			},
-		},
+		{Ports: ports},
 		{
 			// DNS
 			Ports: []networkingv1.NetworkPolicyPort{
@@ -114,6 +128,36 @@ func commonEgressRules() []networkingv1.NetworkPolicyEgressRule {
 			},
 		},
 	}
+}
+
+// extraEgressPorts renders spec.security.networkPolicy.extraEgressPorts,
+// skipping any that duplicate a default port so the rule stays tidy.
+func extraEgressPorts(instance *v1alpha1.LangfuseInstance) []networkingv1.NetworkPolicyPort {
+	if instance.Spec.Security == nil || instance.Spec.Security.NetworkPolicy == nil {
+		return nil
+	}
+
+	defaults := make(map[int]bool, len(defaultEgressPorts))
+	for _, p := range defaultEgressPorts {
+		defaults[p] = true
+	}
+
+	extras := instance.Spec.Security.NetworkPolicy.ExtraEgressPorts
+	out := make([]networkingv1.NetworkPolicyPort, 0, len(extras))
+	for _, extra := range extras {
+		protocol := extra.Protocol
+		if protocol == "" {
+			protocol = corev1.ProtocolTCP
+		}
+		if protocol == corev1.ProtocolTCP && defaults[int(extra.Port)] {
+			continue
+		}
+		out = append(out, networkingv1.NetworkPolicyPort{
+			Protocol: protocolPtr(protocol),
+			Port:     intstrPtr(int(extra.Port)),
+		})
+	}
+	return out
 }
 
 func protocolPtr(p corev1.Protocol) *corev1.Protocol {

@@ -961,6 +961,26 @@ type NetworkPolicySpec struct {
 	// +kubebuilder:default=true
 	// +optional
 	Enabled *bool `json:"enabled,omitempty"`
+	// ExtraEgressPorts opens additional destination ports in the generated
+	// egress rules. The operator allows the well-known datastore ports (both
+	// plaintext and TLS) by default, but the actual ports come from connection
+	// Secrets it cannot introspect — use this for datastores on non-standard
+	// ports, sidecars, or additional external services.
+	// +optional
+	ExtraEgressPorts []NetworkPolicyPort `json:"extraEgressPorts,omitempty"`
+}
+
+// NetworkPolicyPort is an additional destination port to allow in egress rules.
+type NetworkPolicyPort struct {
+	// Port is the destination port number.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	Port int32 `json:"port"`
+	// Protocol is the transport protocol.
+	// +kubebuilder:default="TCP"
+	// +kubebuilder:validation:Enum=TCP;UDP
+	// +optional
+	Protocol corev1.Protocol `json:"protocol,omitempty"`
 }
 
 // TelemetrySpec configures Langfuse telemetry.

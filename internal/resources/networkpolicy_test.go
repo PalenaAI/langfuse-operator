@@ -21,6 +21,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+
+	v1alpha1 "github.com/PalenaAI/langfuse-operator/api/v1alpha1"
 )
 
 func TestBuildWebNetworkPolicy(t *testing.T) {
@@ -122,5 +124,101 @@ func TestBuildWorkerNetworkPolicy(t *testing.T) {
 	}
 	if !hasPG {
 		t.Error("data store egress missing PostgreSQL port 5432")
+	}
+}
+
+// egressPortSet collects the allowed egress ports for a protocol.
+func egressPortSet(np *networkingv1.NetworkPolicy, proto corev1.Protocol) map[int32]bool {
+	out := map[int32]bool{}
+	for _, rule := range np.Spec.Egress {
+		for _, p := range rule.Ports {
+			if p.Protocol != nil && *p.Protocol == proto && p.Port != nil {
+				out[p.Port.IntVal] = true
+			}
+		}
+	}
+	return out
+}
+
+// Regression guard: the operator's own default NetworkPolicy must not block the
+// TLS endpoints its datastore-TLS documentation tells users to configure.
+// Enabling clickhouse/redis TLS previously produced a silent connection timeout.
+func TestNetworkPolicy_AllowsDatastoreTLSPorts(t *testing.T) {
+	for name, np := range map[string]*networkingv1.NetworkPolicy{
+		"web":    BuildWebNetworkPolicy(minimalInstance()),
+		"worker": BuildWorkerNetworkPolicy(minimalInstance()),
+	} {
+		ports := egressPortSet(np, corev1.ProtocolTCP)
+		for _, tc := range []struct {
+			port int32
+			what string
+		}{
+			{5432, "PostgreSQL"},
+			{8123, "ClickHouse HTTP"},
+			{8443, "ClickHouse HTTPS (TLS)"},
+			{9000, "ClickHouse native / MinIO"},
+			{9440, "ClickHouse native secure (TLS)"},
+			{6379, "Redis"},
+			{6380, "Redis TLS"},
+			{443, "HTTPS"},
+			{3000, "web<->worker"},
+		} {
+			if !ports[tc.port] {
+				t.Errorf("%s netpol blocks port %d (%s)", name, tc.port, tc.what)
+			}
+		}
+	}
+}
+
+func TestNetworkPolicy_AllowsDNS(t *testing.T) {
+	np := BuildWebNetworkPolicy(minimalInstance())
+	if !egressPortSet(np, corev1.ProtocolUDP)[53] {
+		t.Error("UDP DNS blocked")
+	}
+	if !egressPortSet(np, corev1.ProtocolTCP)[53] {
+		t.Error("TCP DNS blocked")
+	}
+}
+
+func TestNetworkPolicy_ExtraEgressPorts(t *testing.T) {
+	instance := minimalInstance()
+	instance.Spec.Security = &v1alpha1.SecuritySpec{
+		NetworkPolicy: &v1alpha1.NetworkPolicySpec{
+			ExtraEgressPorts: []v1alpha1.NetworkPolicyPort{
+				{Port: 15432}, // Postgres behind a pooler on a custom port
+				{Port: 5432},  // duplicate of a default — must be skipped
+				{Port: 1514, Protocol: corev1.ProtocolUDP}, // e.g. syslog sidecar
+			},
+		},
+	}
+
+	np := BuildWorkerNetworkPolicy(instance)
+	tcp := egressPortSet(np, corev1.ProtocolTCP)
+	if !tcp[15432] {
+		t.Error("extra TCP port 15432 not allowed")
+	}
+	if !egressPortSet(np, corev1.ProtocolUDP)[1514] {
+		t.Error("extra UDP port 1514 not allowed")
+	}
+
+	// The duplicate must not be emitted twice.
+	count := 0
+	for _, rule := range np.Spec.Egress {
+		for _, p := range rule.Ports {
+			if p.Port != nil && p.Port.IntVal == 5432 && p.Protocol != nil && *p.Protocol == corev1.ProtocolTCP {
+				count++
+			}
+		}
+	}
+	if count != 1 {
+		t.Errorf("port 5432 appears %d times, want 1 (duplicate should be skipped)", count)
+	}
+}
+
+func TestNetworkPolicy_NoExtraPortsWhenSecurityUnset(t *testing.T) {
+	np := BuildWebNetworkPolicy(minimalInstance())
+	if got := len(egressPortSet(np, corev1.ProtocolTCP)); got != len(defaultEgressPorts)+1 {
+		// +1 for TCP DNS (53), which lives in the second rule.
+		t.Errorf("TCP port count = %d, want %d defaults + DNS", got, len(defaultEgressPorts))
 	}
 }
